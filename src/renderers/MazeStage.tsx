@@ -251,7 +251,9 @@ export function MazeStage({
               <span className="text-slate-300">
                 {hasGyro
                   ? 'Nakláněj tablet pro kutálení kuličky'
-                  : 'Nakláněj tablet (nebo drž šipky / WASD)'}
+                  : permission === 'unsupported'
+                    ? 'Ovládej kuličku šipkami / WASD'
+                    : 'Nakláněj tablet (nebo drž šipky / WASD)'}
               </span>
               {hasGyro && (
                 <button

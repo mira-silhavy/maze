@@ -33,6 +33,16 @@ function applyDeadZone(deg: number): number {
   return sign * clamp((Math.abs(deg) - DEAD_ZONE_DEG) / (MAX_TILT_DEG - DEAD_ZONE_DEG), 0, 1);
 }
 
+function isTouchDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+  return (
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia?.('(pointer: coarse)').matches === true
+  );
+}
+
 function needsIOSPermission(): boolean {
   if (typeof window === 'undefined') return false;
   const ctor = window.DeviceOrientationEvent as unknown as
@@ -49,7 +59,11 @@ export function useTiltInput(enabled: boolean) {
 
   const [hasGyro, setHasGyro] = useState(false);
   const [permission, setPermission] = useState<TiltPermission>(() => {
-    if (typeof window === 'undefined' || !('DeviceOrientationEvent' in window)) {
+    if (
+      typeof window === 'undefined' ||
+      !('DeviceOrientationEvent' in window) ||
+      !isTouchDevice()
+    ) {
       return 'unsupported';
     }
     return needsIOSPermission() ? 'prompt' : 'granted';
