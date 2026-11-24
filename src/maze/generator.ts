@@ -73,7 +73,7 @@ export function generateMaze(
         const farCol = current.col + 2 * dCol;
         if (
           over &&
-          isBridgeable(over, axisOf(dir), rows, cols) &&
+          isBridgeable(grid, over, axisOf(dir)) &&
           farRow >= 0 &&
           farRow < rows &&
           farCol >= 0 &&
@@ -119,20 +119,20 @@ export function generateMaze(
   };
 }
 
-function isBridgeable(
-  cell: Cell,
-  underAxis: Axis,
-  rows: number,
-  cols: number,
-): boolean {
+function isBridgeable(grid: Cell[][], cell: Cell, underAxis: Axis): boolean {
   const { top, right, bottom, left } = cell.walls;
   const straight =
     underAxis === 'vertical'
       ? top && bottom && !left && !right
       : left && right && !top && !bottom;
+  const rows = grid.length;
+  const cols = grid[0].length;
   const isStart = cell.row === 0 && cell.col === 0;
   const isEnd = cell.row === rows - 1 && cell.col === cols - 1;
-  return straight && !cell.bridge && !isStart && !isEnd;
+  const nextToBridge = DIRECTIONS.some(
+    ({ dRow, dCol }) => grid[cell.row + dRow]?.[cell.col + dCol]?.bridge,
+  );
+  return straight && !cell.bridge && !nextToBridge && !isStart && !isEnd;
 }
 
 export function gridStep(

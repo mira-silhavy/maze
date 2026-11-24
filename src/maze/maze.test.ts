@@ -220,6 +220,18 @@ describe('bridges', () => {
     expect(count(false)).toBe(0);
   });
 
+  it('never puts two bridges next to each other', () => {
+    for (let i = 0; i < 100; i++) {
+      const { grid } = generateMaze(19, 19, { bridges: true });
+      for (const cell of grid.flat()) {
+        if (!cell.bridge) continue;
+        for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+          expect(grid[cell.row + dr]?.[cell.col + dc]?.bridge).toBeUndefined();
+        }
+      }
+    }
+  });
+
   it('never bridges the start, the end or a target', () => {
     for (let i = 0; i < 50; i++) {
       const maze = generateMaze(11, 11, { bridges: true });
