@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { positionKey } from '../maze/generator';
+import { cellPositions, pathThrough, positionKey } from '../maze/generator';
 import type { MazeTheme } from '../maze/themes';
-import type { AspectRatioId, GameMode, Maze, Position } from '../maze/types';
+import type {
+  AspectRatioId,
+  Cell,
+  GameMode,
+  Maze,
+  Position,
+} from '../maze/types';
 
 interface MazeCanvasProps {
   maze: Maze;
@@ -76,7 +82,10 @@ export function MazeCanvas({
       ctx.fillStyle = theme.visitedFill;
       for (let r = 0; r < maze.rows; r++) {
         for (let c = 0; c < maze.cols; c++) {
-          if (visited.has(positionKey({ row: r, col: c }))) {
+          const isVisited = cellPositions(maze.grid[r][c]).some((pos) =>
+            visited.has(positionKey(pos)),
+          );
+          if (isVisited) {
             ctx.fillRect(
               offsetX + c * cellSize + 1,
               offsetY + r * cellSize + 1,
@@ -87,8 +96,7 @@ export function MazeCanvas({
         }
       }
 
-      // Continuous pencil line along player's path
-      if (trail.length > 1) {
+      const strokeTrail = (points: Position[]) => {
         ctx.save();
         ctx.beginPath();
         ctx.strokeStyle = theme.pencilLine;
@@ -99,7 +107,7 @@ export function MazeCanvas({
         ctx.shadowBlur = theme.isLight ? 3 : 6;
         ctx.globalAlpha = theme.isLight ? 0.85 : 0.78;
 
-        trail.forEach((pos, idx) => {
+        points.forEach((pos, idx) => {
           const x = offsetX + (pos.col + 0.5) * cellSize;
           const y = offsetY + (pos.row + 0.5) * cellSize;
           if (idx === 0) ctx.moveTo(x, y);
@@ -107,6 +115,140 @@ export function MazeCanvas({
         });
         ctx.stroke();
         ctx.restore();
+      };
+
+      const strokeHint = (points: Position[]) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = theme.hintStroke;
+        ctx.lineWidth = Math.max(2, cellSize * 0.16);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.setLineDash([
+          Math.max(3, cellSize * 0.2),
+          Math.max(4, cellSize * 0.25),
+        ]);
+
+        points.forEach((pos, idx) => {
+          const x = offsetX + (pos.col + 0.5) * cellSize;
+          const y = offsetY + (pos.row + 0.5) * cellSize;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const drawPlayer = (under: boolean) => {
+        const playerX = offsetX + (player.col + 0.5) * cellSize;
+        const playerY = offsetY + (player.row + 0.5) * cellSize;
+        const radius = Math.max(3.5, cellSize * 0.3);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.fillStyle = theme.playerFill;
+        if (under) {
+          ctx.globalAlpha = 0.55;
+        } else {
+          ctx.shadowColor = theme.playerFill;
+          ctx.shadowBlur = theme.isLight ? 4 : Math.max(8, cellSize * 0.5);
+        }
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = theme.playerCore;
+        ctx.fill();
+        ctx.restore();
+      };
+
+      const wallWidth = Math.max(1.5, Math.min(3.5, cellSize * 0.1));
+
+      const drawBridge = (cell: Cell) => {
+        const half = cellSize / 2;
+        const inset = cellSize * 0.14;
+        const local = (paint: () => void) => {
+          ctx.save();
+          ctx.translate(
+            offsetX + (cell.col + 0.5) * cellSize,
+            offsetY + (cell.row + 0.5) * cellSize,
+          );
+          if (cell.bridge === 'vertical') ctx.rotate(Math.PI / 2);
+          paint();
+          ctx.restore();
+        };
+        const deck = () =>
+          ctx.rect(-half, -half + inset, cellSize, cellSize - 2 * inset);
+
+        local(() => {
+          ctx.fillStyle = theme.isLight
+            ? 'rgba(0, 0, 0, 0.28)'
+            : 'rgba(0, 0, 0, 0.5)';
+          ctx.fillRect(-half, -half, cellSize, cellSize);
+          ctx.beginPath();
+          deck();
+          ctx.fillStyle = theme.background;
+          ctx.fill();
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = theme.wall;
+          ctx.fill();
+        });
+
+        ctx.save();
+        ctx.beginPath();
+        local(deck);
+        ctx.clip();
+        for (const part of pathThrough(trail, cell, 'over')) strokeTrail(part);
+        for (const part of pathThrough(hintPath, cell, 'over')) {
+          strokeHint(part);
+        }
+        if (
+          player.level === 'under' &&
+          player.row === cell.row &&
+          player.col === cell.col
+        ) {
+          drawPlayer(true);
+        }
+        ctx.restore();
+
+        local(() => {
+          ctx.strokeStyle = theme.wall;
+          ctx.lineCap = 'round';
+          ctx.globalAlpha = 0.55;
+          ctx.lineWidth = Math.max(1, cellSize * 0.05);
+          ctx.beginPath();
+          for (let k = 1; k < 5; k++) {
+            const x = -half + (k * cellSize) / 5;
+            ctx.moveTo(x, -half + inset);
+            ctx.lineTo(x, half - inset);
+          }
+          ctx.stroke();
+
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = wallWidth * 1.6;
+          ctx.beginPath();
+          for (const y of [-half + inset, half - inset]) {
+            ctx.moveTo(-half, y);
+            ctx.lineTo(half, y);
+          }
+          ctx.stroke();
+
+          ctx.lineWidth = wallWidth;
+          ctx.beginPath();
+          for (const x of [-half, half]) {
+            ctx.moveTo(x, -half);
+            ctx.lineTo(x, -half + inset);
+            ctx.moveTo(x, half - inset);
+            ctx.lineTo(x, half);
+          }
+          ctx.stroke();
+        });
+      };
+
+      // Continuous pencil line along player's path
+      if (trail.length > 1) {
+        strokeTrail(trail);
       }
 
       // Start cell highlight / cross in collect mode
@@ -207,36 +349,25 @@ export function MazeCanvas({
 
       // Optional hint path
       if (hintPath.length > 1) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = theme.hintStroke;
-        ctx.lineWidth = Math.max(2, cellSize * 0.16);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.setLineDash([
-          Math.max(3, cellSize * 0.2),
-          Math.max(4, cellSize * 0.25),
-        ]);
+        strokeHint(hintPath);
+      }
 
-        hintPath.forEach((pos, idx) => {
-          const x = offsetX + (pos.col + 0.5) * cellSize;
-          const y = offsetY + (pos.row + 0.5) * cellSize;
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-        ctx.restore();
+      for (const row of maze.grid) {
+        for (const cell of row) {
+          if (cell.bridge) drawBridge(cell);
+        }
       }
 
       // Maze walls
       ctx.strokeStyle = theme.wall;
-      ctx.lineWidth = Math.max(1.5, Math.min(3.5, cellSize * 0.1));
+      ctx.lineWidth = wallWidth;
       ctx.lineCap = 'round';
       ctx.beginPath();
 
       for (let r = 0; r < maze.rows; r++) {
         for (let c = 0; c < maze.cols; c++) {
           const cell = maze.grid[r][c];
+          if (cell.bridge) continue;
           const x = offsetX + c * cellSize;
           const y = offsetY + r * cellSize;
 
@@ -260,24 +391,7 @@ export function MazeCanvas({
       }
       ctx.stroke();
 
-      // Player
-      const playerX = offsetX + (player.col + 0.5) * cellSize;
-      const playerY = offsetY + (player.row + 0.5) * cellSize;
-      const radius = Math.max(3.5, cellSize * 0.3);
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = theme.playerFill;
-      ctx.shadowColor = theme.playerFill;
-      ctx.shadowBlur = theme.isLight ? 4 : Math.max(8, cellSize * 0.5);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(playerX, playerY, radius * 0.45, 0, Math.PI * 2);
-      ctx.fillStyle = theme.playerCore;
-      ctx.fill();
-      ctx.restore();
+      if (player.level !== 'under') drawPlayer(false);
     };
 
     draw();

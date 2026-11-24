@@ -1,4 +1,4 @@
-import type { Axis, Cell, Direction, Maze, Position } from './types';
+import type { Axis, Cell, Direction, Level, Maze, Position } from './types';
 
 const DIRECTIONS: ReadonlyArray<{
   dir: Direction;
@@ -186,4 +186,47 @@ export function cellPositions(cell: Cell): Position[] {
         { row, col, level: 'under' },
       ]
     : [{ row, col }];
+}
+
+export function pathThrough(
+  path: Position[],
+  cell: Cell,
+  level: Level,
+): Position[][] {
+  return path.flatMap((pos, i) =>
+    pos.row === cell.row && pos.col === cell.col && pos.level === level
+      ? [path.slice(Math.max(0, i - 1), i + 2)]
+      : [],
+  );
+}
+
+export function corridorLinks(maze: Maze): Array<[Position, Position]> {
+  const links: Array<[Position, Position]> = [];
+  for (let r = 0; r < maze.rows; r++) {
+    for (let c = 0; c < maze.cols; c++) {
+      const cell = maze.grid[r][c];
+      const right = maze.grid[r][c + 1];
+      const below = maze.grid[r + 1]?.[c];
+      if (right && !(cell.walls.right && right.walls.left)) {
+        links.push([{ row: r, col: c }, { row: r, col: c + 1 }]);
+      }
+      if (below && !(cell.walls.bottom && below.walls.top)) {
+        links.push([{ row: r, col: c }, { row: r + 1, col: c }]);
+      }
+    }
+  }
+  return links;
+}
+
+export function bridgeNeighbors(cell: Cell): [Position, Position] {
+  const { row, col } = cell;
+  return cell.bridge === 'horizontal'
+    ? [
+        { row, col: col - 1 },
+        { row, col: col + 1 },
+      ]
+    : [
+        { row: row - 1, col },
+        { row: row + 1, col },
+      ];
 }

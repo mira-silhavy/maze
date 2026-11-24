@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cellPositions,
+  corridorLinks,
   generateMaze,
   gridStep,
   positionKey,
@@ -251,6 +252,13 @@ describe('bridges', () => {
     expect(gridStep(maze, under, 'top')).toEqual({ row: 0, col: 1 });
     expect(gridStep(maze, under, 'left')).toBeNull();
     expect(gridStep(maze, under, 'right')).toBeNull();
+  });
+
+  it('links the corridor cells on both levels of a bridge', () => {
+    const links = corridorLinks(bridgeMaze()).map((pair) =>
+      pair.map(positionKey).join('-'),
+    );
+    expect(links.sort()).toEqual(['0,1-1,1', '1,0-1,1', '1,1-1,2', '1,1-2,1']);
   });
 
   it('solves through a bridge on both levels', () => {

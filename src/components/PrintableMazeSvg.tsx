@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
 import type { Round, Settings } from '../game/model';
-import { positionKey } from '../maze/generator';
+import {
+  bridgeNeighbors,
+  corridorLinks,
+  positionKey,
+} from '../maze/generator';
 import { hasPolarPassage, polarCellId } from '../maze/polar';
-import type { Position } from '../maze/types';
+import type { Cell, Position } from '../maze/types';
 
 interface PrintableMazeSvgProps {
   settings: Pick<Settings, 'style' | 'mode'>;
@@ -67,6 +71,7 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
     for (let r = 0; r < gridMaze.rows; r++) {
       for (let c = 0; c < gridMaze.cols; c++) {
         const cell = gridMaze.grid[r][c];
+        if (cell.bridge) continue;
         const x = PAD + c * CELL;
         const y = PAD + r * CELL;
         if (cell.walls.top) parts.push(`M ${x} ${y} L ${x + CELL} ${y}`);
@@ -82,20 +87,15 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
 
   const curvedCorridorD = useMemo(() => {
     if (!gridMaze) return '';
-    const segments: string[] = [];
-    for (let r = 0; r < gridMaze.rows; r++) {
-      for (let c = 0; c < gridMaze.cols; c++) {
-        const cell = gridMaze.grid[r][c];
-        if (!cell.walls.right && c + 1 < gridMaze.cols) {
-          segments.push(curvedSegment({ row: r, col: c }, { row: r, col: c + 1 }));
-        }
-        if (!cell.walls.bottom && r + 1 < gridMaze.rows) {
-          segments.push(curvedSegment({ row: r, col: c }, { row: r + 1, col: c }));
-        }
-      }
-    }
-    return segments.join(' ');
+    return corridorLinks(gridMaze)
+      .map(([a, b]) => curvedSegment(a, b))
+      .join(' ');
   }, [gridMaze]);
+
+  const bridges = useMemo(
+    () => (gridMaze ? gridMaze.grid.flat().filter((cell) => cell.bridge) : []),
+    [gridMaze],
+  );
 
   const polarWallD = useMemo(() => {
     if (!polarMaze) return '';
@@ -165,6 +165,9 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
               strokeWidth="2.4"
               strokeLinecap="round"
             />
+            {bridges.map((cell) => (
+              <GridBridge key={positionKey(cell)} cell={cell} />
+            ))}
             {gameMode === 'collect' ? (
               <>
                 <g stroke="#000000" strokeWidth="3" strokeLinecap="round">
@@ -241,6 +244,9 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
+            {bridges.map((cell) => (
+              <CurvedBridge key={positionKey(cell)} cell={cell} />
+            ))}
             {gameMode === 'collect' ? (
               <>
                 {(() => {
@@ -369,5 +375,76 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function bridgePaths(cell: Cell): { deck: string; planks: string } {
+  const [from, to] = bridgeNeighbors(cell);
+  const [, x1, y1, , cx, cy, x2, y2] = curvedSegment(from, cell).split(' ');
+  const after = curvedSegment(cell, to);
+  return {
+    deck: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2} ${after}`,
+    planks: `M ${x2} ${y2} Q ${cx} ${cy} ${x1} ${y1} ${after}`,
+  };
+}
+
+function GridBridge({ cell }: { cell: Cell }) {
+  const half = CELL / 2;
+  const inset = CELL * 0.14;
+  const planks = [1, 2, 3, 4].map((k) => -half + (k * CELL) / 5);
+  return (
+    <g
+      transform={`translate(${PAD + (cell.col + 0.5) * CELL} ${PAD + (cell.row + 0.5) * CELL})${cell.bridge === 'vertical' ? ' rotate(90)' : ''}`}
+      stroke="#000000"
+      strokeLinecap="round"
+    >
+      <path
+        d={planks
+          .map((x) => `M ${x} ${-half + inset} L ${x} ${half - inset}`)
+          .join(' ')}
+        strokeWidth="1"
+      />
+      <path
+        d={`M ${-half} ${-half + inset} L ${half} ${-half + inset} M ${-half} ${half - inset} L ${half} ${half - inset}`}
+        strokeWidth="3.6"
+      />
+      <path
+        d={[-half, half]
+          .map(
+            (x) =>
+              `M ${x} ${-half} L ${x} ${-half + inset} M ${x} ${half - inset} L ${x} ${half}`,
+          )
+          .join(' ')}
+        strokeWidth="2.4"
+      />
+    </g>
+  );
+}
+
+function CurvedBridge({ cell }: { cell: Cell }) {
+  const { deck, planks } = bridgePaths(cell);
+  const id = `print-bridge-${cell.row}-${cell.col}`;
+  return (
+    <>
+      <clipPath id={id}>
+        <rect
+          x={PAD + cell.col * CELL}
+          y={PAD + cell.row * CELL}
+          width={CELL}
+          height={CELL}
+        />
+      </clipPath>
+      <g clipPath={`url(#${id})`} fill="none" strokeLinejoin="round">
+        <path d={deck} stroke="#000000" strokeWidth={CELL * 0.84} />
+        <path d={deck} stroke="#ffffff" strokeWidth={CELL * 0.62} />
+        <path
+          d={planks}
+          stroke="#000000"
+          strokeWidth={CELL * 0.62}
+          strokeDasharray="1.5 5"
+          strokeDashoffset="4"
+        />
+      </g>
+    </>
   );
 }
