@@ -110,12 +110,12 @@ function createRound(settings: Settings): Round {
   if (MAZE_STYLES[settings.style].geometry === 'polar') {
     return {
       kind: 'polar',
-      ...buildRound(polarGeometry, difficulty, aspect, settings.targetCount),
+      ...buildRound(polarGeometry, difficulty, aspect, settings),
     };
   }
   return {
     kind: 'grid',
-    ...buildRound(gridGeometry, difficulty, aspect, settings.targetCount),
+    ...buildRound(gridGeometry, difficulty, aspect, settings),
   };
 }
 
@@ -123,9 +123,9 @@ function buildRound<M, N>(
   geo: Geometry<M, N>,
   difficulty: DifficultyPreset,
   aspect: AspectRatioPreset,
-  targetCount: TargetCount,
+  { targetCount, bridges }: Settings,
 ): RoundOf<M, N> {
-  const maze = geo.create(difficulty, aspect);
+  const maze = geo.create(difficulty, aspect, bridges);
   const start = geo.start(maze);
   const board: Board<M, N> = {
     maze,

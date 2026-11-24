@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { generateMaze, gridStep, positionKey } from './generator';
+import {
+  cellPositions,
+  corridorLinks,
+  generateMaze,
+  gridStep,
+  positionKey,
+} from './generator';
 import {
   findPolarShortestPath,
   generatePolarMaze,
@@ -16,6 +22,7 @@ import {
   DIFFICULTY_PRESETS,
   getMazeDimensions,
   type Direction,
+  type Maze,
 } from './types';
 
 describe('maze generator and solver', () => {
@@ -144,5 +151,134 @@ describe('maze generator and solver', () => {
       ).length;
       expect(openCount).toBe(1);
     }
+  });
+});
+
+const DIRS: Direction[] = ['top', 'right', 'bottom', 'left'];
+
+function bridgeMaze(): Maze {
+  const maze = generateMaze(3, 3);
+  for (const row of maze.grid) {
+    for (const cell of row) {
+      cell.walls = { top: true, right: true, bottom: true, left: true };
+    }
+  }
+  const g = maze.grid;
+  g[1][0].walls.right = false;
+  g[1][1].walls.left = false;
+  g[1][1].walls.right = false;
+  g[1][2].walls.left = false;
+  g[0][1].walls.bottom = false;
+  g[2][1].walls.top = false;
+  g[1][1].bridge = 'horizontal';
+  return maze;
+}
+
+describe('bridges', () => {
+  it('generates perfect mazes over (cell, level) nodes', () => {
+    const sizes: Array<[number, number]> = [
+      [5, 5],
+      [11, 11],
+      [8, 15],
+      [19, 19],
+      [29, 29],
+    ];
+    for (const [rows, cols] of sizes) {
+      for (let i = 0; i < 20; i++) {
+        const maze = generateMaze(rows, cols, { bridges: true });
+        const nodes = maze.grid.flat().flatMap(cellPositions);
+        const edges = new Set<string>();
+        const reached = new Set([positionKey(maze.start)]);
+        const queue = [maze.start];
+        while (queue.length > 0) {
+          const cur = queue.shift()!;
+          for (const dir of DIRS) {
+            const next = gridStep(maze, cur, dir);
+            if (!next) continue;
+            const pair = [positionKey(cur), positionKey(next)].sort();
+            edges.add(pair.join('|'));
+            if (!reached.has(positionKey(next))) {
+              reached.add(positionKey(next));
+              queue.push(next);
+            }
+          }
+        }
+        expect([...reached].sort()).toEqual(nodes.map(positionKey).sort());
+        expect(edges.size).toBe(nodes.length - 1);
+      }
+    }
+  });
+
+  it('places bridges only when asked', () => {
+    const count = (bridges: boolean) =>
+      Array.from({ length: 10 }, () =>
+        generateMaze(19, 19, { bridges }).grid.flat(),
+      )
+        .flat()
+        .filter((cell) => cell.bridge).length;
+    expect(count(true)).toBeGreaterThan(10);
+    expect(count(false)).toBe(0);
+  });
+
+  it('never bridges the start, the end or a target', () => {
+    for (let i = 0; i < 50; i++) {
+      const maze = generateMaze(11, 11, { bridges: true });
+      const targets = selectDeadEndTargets(maze, Number.POSITIVE_INFINITY);
+      for (const pos of [maze.start, maze.end, ...targets]) {
+        expect(maze.grid[pos.row][pos.col].bridge).toBeUndefined();
+      }
+      for (const target of targets) {
+        expect(DIRS.filter((d) => gridStep(maze, target, d))).toHaveLength(1);
+      }
+    }
+  });
+
+  it('enters a bridge at the level of the entry axis and passes straight through', () => {
+    const maze = bridgeMaze();
+    const over = { row: 1, col: 1, level: 'over' } as const;
+    const under = { row: 1, col: 1, level: 'under' } as const;
+
+    expect(gridStep(maze, { row: 1, col: 0 }, 'right')).toEqual(over);
+    expect(gridStep(maze, { row: 1, col: 2 }, 'left')).toEqual(over);
+    expect(gridStep(maze, { row: 0, col: 1 }, 'bottom')).toEqual(under);
+    expect(gridStep(maze, { row: 2, col: 1 }, 'top')).toEqual(under);
+
+    expect(gridStep(maze, over, 'right')).toEqual({ row: 1, col: 2 });
+    expect(gridStep(maze, over, 'left')).toEqual({ row: 1, col: 0 });
+    expect(gridStep(maze, over, 'top')).toBeNull();
+    expect(gridStep(maze, over, 'bottom')).toBeNull();
+
+    expect(gridStep(maze, under, 'bottom')).toEqual({ row: 2, col: 1 });
+    expect(gridStep(maze, under, 'top')).toEqual({ row: 0, col: 1 });
+    expect(gridStep(maze, under, 'left')).toBeNull();
+    expect(gridStep(maze, under, 'right')).toBeNull();
+  });
+
+  it('links the corridor cells on both levels of a bridge', () => {
+    const links = corridorLinks(bridgeMaze()).map((pair) =>
+      pair.map(positionKey).join('-'),
+    );
+    expect(links.sort()).toEqual(['0,1-1,1', '1,0-1,1', '1,1-1,2', '1,1-2,1']);
+  });
+
+  it('solves through a bridge on both levels', () => {
+    const maze = bridgeMaze();
+    expect(
+      findShortestPath(maze, { row: 0, col: 1 }, { row: 2, col: 1 }),
+    ).toEqual([
+      { row: 0, col: 1 },
+      { row: 1, col: 1, level: 'under' },
+      { row: 2, col: 1 },
+    ]);
+    expect(
+      findShortestPath(maze, { row: 1, col: 0 }, { row: 1, col: 2 }),
+    ).toEqual([
+      { row: 1, col: 0 },
+      { row: 1, col: 1, level: 'over' },
+      { row: 1, col: 2 },
+    ]);
+    expect(
+      findShortestPath(maze, { row: 0, col: 1 }, { row: 1, col: 2 }),
+    ).toEqual([]);
   });
 });

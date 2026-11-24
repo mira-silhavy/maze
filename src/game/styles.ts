@@ -7,6 +7,7 @@ export interface MazeStyleInfo {
   Icon: LucideIcon;
   subtitle: string;
   usesAspectRatio: boolean;
+  supportsBridges: boolean;
   geometry: Round['kind'];
 }
 
@@ -19,6 +20,7 @@ export const MAZE_STYLES: Record<MazeStyle, MazeStyleInfo> = {
     Icon: Grid2X2,
     subtitle: GRID_SUBTITLE,
     usesAspectRatio: true,
+    supportsBridges: true,
     geometry: 'grid',
   },
   curved: {
@@ -26,6 +28,7 @@ export const MAZE_STYLES: Record<MazeStyle, MazeStyleInfo> = {
     Icon: Spline,
     subtitle: GRID_SUBTITLE,
     usesAspectRatio: true,
+    supportsBridges: true,
     geometry: 'grid',
   },
   circular: {
@@ -34,6 +37,7 @@ export const MAZE_STYLES: Record<MazeStyle, MazeStyleInfo> = {
     subtitle:
       'Dostaň se ze středu kruhového bludiště až k zelenému východu na okraji.',
     usesAspectRatio: false,
+    supportsBridges: false,
     geometry: 'polar',
   },
 };

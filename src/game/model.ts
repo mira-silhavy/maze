@@ -19,6 +19,7 @@ export interface Settings {
   targetCount: TargetCount;
   sound: boolean;
   eraseBacktrack: boolean;
+  bridges: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   targetCount: 7,
   sound: true,
   eraseBacktrack: true,
+  bridges: false,
 };
 
 export type SettingEffect = 'regenerate' | 'retarget' | 'none';
@@ -47,6 +49,7 @@ export const SETTING_EFFECT: Record<keyof Settings, SettingEffect> = {
   themeId: 'none',
   sound: 'none',
   eraseBacktrack: 'none',
+  bridges: 'regenerate',
 };
 
 export interface Board<M, N> {

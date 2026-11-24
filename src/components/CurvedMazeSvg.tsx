@@ -1,7 +1,18 @@
 import { useMemo } from 'react';
-import { positionKey } from '../maze/generator';
+import {
+  bridgeNeighbors,
+  corridorLinks,
+  pathThrough,
+  positionKey,
+} from '../maze/generator';
 import type { MazeTheme } from '../maze/themes';
-import type { AspectRatioId, GameMode, Maze, Position } from '../maze/types';
+import type {
+  AspectRatioId,
+  Cell,
+  GameMode,
+  Maze,
+  Position,
+} from '../maze/types';
 
 interface CurvedMazeSvgProps {
   maze: Maze;
@@ -54,6 +65,16 @@ function curvedSegment(a: Position, b: Position): string {
   return `M ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
 }
 
+function bridgePaths(cell: Cell): { deck: string; planks: string } {
+  const [from, to] = bridgeNeighbors(cell);
+  const [, x1, y1, , cx, cy, x2, y2] = curvedSegment(from, cell).split(' ');
+  const after = curvedSegment(cell, to);
+  return {
+    deck: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2} ${after}`,
+    planks: `M ${x2} ${y2} Q ${cx} ${cy} ${x1} ${y1} ${after}`,
+  };
+}
+
 export function CurvedMazeSvg({
   maze,
   player,
@@ -69,21 +90,15 @@ export function CurvedMazeSvg({
   const viewWidth = maze.cols * CELL_UNIT + PADDING * 2;
   const viewHeight = maze.rows * CELL_UNIT + PADDING * 2;
 
-  const corridorPathD = useMemo(() => {
-    const segments: string[] = [];
-    for (let r = 0; r < maze.rows; r++) {
-      for (let c = 0; c < maze.cols; c++) {
-        const cell = maze.grid[r][c];
-        if (!cell.walls.right && c + 1 < maze.cols) {
-          segments.push(curvedSegment({ row: r, col: c }, { row: r, col: c + 1 }));
-        }
-        if (!cell.walls.bottom && r + 1 < maze.rows) {
-          segments.push(curvedSegment({ row: r, col: c }, { row: r + 1, col: c }));
-        }
-      }
-    }
-    return segments.join(' ');
-  }, [maze]);
+  const corridorPathD = useMemo(
+    () => corridorLinks(maze).map(([a, b]) => curvedSegment(a, b)).join(' '),
+    [maze],
+  );
+
+  const bridges = useMemo(
+    () => maze.grid.flat().filter((cell) => cell.bridge),
+    [maze],
+  );
 
   const pencilPathD = useMemo(() => {
     if (trail.length < 2) return '';
@@ -106,6 +121,17 @@ export function CurvedMazeSvg({
   const startPos = nodeCenter(maze.start);
   const endPos = nodeCenter(maze.end);
   const playerPos = nodeCenter(player);
+  const playerMarker = (
+    <>
+      <circle cx={playerPos.x} cy={playerPos.y} r="9.5" fill={theme.playerFill} />
+      <circle cx={playerPos.x} cy={playerPos.y} r="4" fill={theme.playerCore} />
+    </>
+  );
+  const pathD = (points: Position[]) =>
+    points
+      .slice(1)
+      .map((pos, i) => curvedSegment(points[i], pos))
+      .join(' ');
 
   return (
     <div
@@ -131,6 +157,19 @@ export function CurvedMazeSvg({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          {bridges.map((cell) => (
+            <clipPath
+              key={positionKey(cell)}
+              id={`curved-bridge-${cell.row}-${cell.col}`}
+            >
+              <rect
+                x={PADDING + cell.col * CELL_UNIT}
+                y={PADDING + cell.row * CELL_UNIT}
+                width={CELL_UNIT}
+                height={CELL_UNIT}
+              />
+            </clipPath>
+          ))}
         </defs>
 
         {/* Corridor outer wall stroke */}
@@ -178,6 +217,59 @@ export function CurvedMazeSvg({
             opacity="0.9"
           />
         )}
+
+        {bridges.map((cell) => {
+          const { deck, planks } = bridgePaths(cell);
+          const isUnder =
+            player.level === 'under' &&
+            player.row === cell.row &&
+            player.col === cell.col;
+          return (
+            <g
+              key={positionKey(cell)}
+              clipPath={`url(#curved-bridge-${cell.row}-${cell.col})`}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={deck} stroke={theme.wall} strokeWidth={CELL_UNIT * 0.8} />
+              <path
+                d={deck}
+                stroke={theme.corridorFloor}
+                strokeWidth={CELL_UNIT * 0.54}
+              />
+              {pathThrough(trail, cell, 'over').map((part, i) => (
+                <path
+                  key={i}
+                  d={pathD(part)}
+                  stroke={theme.pencilLine}
+                  strokeWidth={CELL_UNIT * 0.2}
+                  opacity={theme.isLight ? 0.85 : 0.8}
+                />
+              ))}
+              {pathThrough(hintPath, cell, 'over').map((part, i) => (
+                <path
+                  key={i}
+                  d={pathD(part)}
+                  stroke={theme.hintStroke}
+                  strokeWidth={CELL_UNIT * 0.14}
+                  strokeDasharray="6 8"
+                  opacity="0.9"
+                />
+              ))}
+              {isUnder && <g opacity="0.55">{playerMarker}</g>}
+              <path
+                d={planks}
+                stroke={theme.wall}
+                strokeOpacity="0.55"
+                strokeWidth={CELL_UNIT * 0.54}
+                strokeLinecap="butt"
+                strokeDasharray="2 6"
+                strokeDashoffset="5"
+              />
+            </g>
+          );
+        })}
 
         {/* Start marker */}
         {gameMode === 'collect' ? (
@@ -246,10 +338,11 @@ export function CurvedMazeSvg({
         )}
 
         {/* Player */}
-        <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
-          <circle cx={playerPos.x} cy={playerPos.y} r="9.5" fill={theme.playerFill} />
-          <circle cx={playerPos.x} cy={playerPos.y} r="4" fill={theme.playerCore} />
-        </g>
+        {player.level !== 'under' && (
+          <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
+            {playerMarker}
+          </g>
+        )}
       </svg>
     </div>
   );

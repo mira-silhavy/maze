@@ -21,7 +21,11 @@ import {
 import type { Round, RoundOf, Vector } from './model';
 
 export interface Geometry<M, N> {
-  create(difficulty: DifficultyPreset, aspect: AspectRatioPreset): M;
+  create(
+    difficulty: DifficultyPreset,
+    aspect: AspectRatioPreset,
+    bridges: boolean,
+  ): M;
   start(maze: M): N;
   end(maze: M): N;
   key(node: N): string;
@@ -31,9 +35,9 @@ export interface Geometry<M, N> {
 }
 
 export const gridGeometry: Geometry<Maze, Position> = {
-  create: (difficulty, aspect) => {
+  create: (difficulty, aspect, bridges) => {
     const { rows, cols } = getMazeDimensions(difficulty, aspect);
-    return generateMaze(rows, cols);
+    return generateMaze(rows, cols, { bridges });
   },
   start: (maze) => maze.start,
   end: (maze) => maze.end,

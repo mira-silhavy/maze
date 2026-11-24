@@ -263,6 +263,72 @@ describe('hint', () => {
   });
 });
 
+describe('bridges', () => {
+  function crossing(settings: Partial<Settings> = {}): GameState {
+    const maze = buildMaze(3, 3, [
+      [{ row: 0, col: 0 }, 'right'],
+      [{ row: 0, col: 1 }, 'bottom'],
+      [{ row: 1, col: 1 }, 'bottom'],
+      [{ row: 2, col: 1 }, 'right'],
+      [{ row: 0, col: 0 }, 'bottom'],
+      [{ row: 1, col: 0 }, 'right'],
+      [{ row: 1, col: 1 }, 'right'],
+      [{ row: 1, col: 2 }, 'top'],
+    ]);
+    maze.grid[1][1].walls.top = true;
+    maze.grid[1][1].walls.bottom = true;
+    maze.grid[1][1].bridge = 'horizontal';
+    return {
+      ...corridor(settings),
+      round: {
+        kind: 'grid',
+        board: { maze, targets: [], optimalSteps: 4 },
+        run: { trail: [maze.start], collected: new Set(), steps: 0 },
+      },
+    };
+  }
+  const down: Command = { type: 'move', dx: 0, dy: 1 };
+
+  it('walks under the bridge and cannot turn there', () => {
+    const s = run(crossing(), right, down);
+    expect(player(s)).toEqual({ row: 1, col: 1, level: 'under' });
+    expect(reduce(s, right).events).toEqual([{ type: 'bump' }]);
+    expect(player(run(s, down))).toEqual({ row: 2, col: 1 });
+  });
+
+  it('walks over the bridge', () => {
+    const s = run(crossing(), down, right);
+    expect(player(s)).toEqual({ row: 1, col: 1, level: 'over' });
+    expect(reduce(s, down).events).toEqual([{ type: 'bump' }]);
+    expect(player(run(s, right))).toEqual({ row: 1, col: 2 });
+  });
+
+  it('erases the trail when backtracking across the bridge', () => {
+    const s = run(crossing(), right, down, down, up, up);
+    expect(trail(s)).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+    ]);
+  });
+
+  it('hints the shortest way through the bridge', () => {
+    const s = run(crossing(), right);
+    expect(hintPath(gridGeometry, gridRound(s), 'classic', true)).toEqual([
+      { row: 0, col: 1 },
+      { row: 1, col: 1, level: 'under' },
+      { row: 2, col: 1 },
+      { row: 2, col: 2 },
+    ]);
+  });
+
+  it('the setting deals a new maze', () => {
+    const s = corridor();
+    const r = reduce(s, { type: 'configure', patch: { bridges: true } }).state;
+    expect(r.settings.bridges).toBe(true);
+    expect(r.round).not.toBe(s.round);
+  });
+});
+
 describe('lifecycle', () => {
   it('tick only advances time while playing', () => {
     const ready = corridor();
