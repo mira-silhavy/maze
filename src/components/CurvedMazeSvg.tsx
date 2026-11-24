@@ -65,6 +65,53 @@ function nodeCenter(pos: Position): { x: number; y: number } {
   };
 }
 
+export function curvedPointFromGrid(
+  gridX: number,
+  gridY: number,
+  rows: number,
+  cols: number,
+): { x: number; y: number } {
+  const u = gridX - 0.5;
+  const v = gridY - 0.5;
+  const maxCol = Math.max(0, cols - 1);
+  const maxRow = Math.max(0, rows - 1);
+
+  const clampedU = Math.min(maxCol, Math.max(0, u));
+  const clampedV = Math.min(maxRow, Math.max(0, v));
+
+  const c0 = Math.floor(clampedU);
+  const r0 = Math.floor(clampedV);
+  const c1 = Math.min(maxCol, c0 + 1);
+  const r1 = Math.min(maxRow, r0 + 1);
+  const tx = clampedU - c0;
+  const ty = clampedV - r0;
+
+  const p00 = nodeCenter({ row: r0, col: c0 });
+  const p10 = nodeCenter({ row: r0, col: c1 });
+  const p01 = nodeCenter({ row: r1, col: c0 });
+  const p11 = nodeCenter({ row: r1, col: c1 });
+
+  const w00 = (1 - tx) * (1 - ty);
+  const w10 = tx * (1 - ty);
+  const w01 = (1 - tx) * ty;
+  const w11 = tx * ty;
+
+  return {
+    x:
+      w00 * p00.x +
+      w10 * p10.x +
+      w01 * p01.x +
+      w11 * p11.x +
+      (u - clampedU) * CELL_UNIT,
+    y:
+      w00 * p00.y +
+      w10 * p10.y +
+      w01 * p01.y +
+      w11 * p11.y +
+      (v - clampedV) * CELL_UNIT,
+  };
+}
+
 function curvedSegment(a: Position, b: Position): string {
   const p1 = nodeCenter(a);
   const p2 = nodeCenter(b);
@@ -140,16 +187,7 @@ export function CurvedMazeSvg({
   const endPos = nodeCenter(maze.end);
   const playerPos = useMemo(() => {
     if (marbleMode && marblePos) {
-      // Smoothly map cell-space (col+0.5, row+0.5) into curved SVG coordinates
-      const baseRow = Math.min(maze.rows - 1, Math.max(0, Math.floor(marblePos.y)));
-      const baseCol = Math.min(maze.cols - 1, Math.max(0, Math.floor(marblePos.x)));
-      const center = nodeCenter({ row: baseRow, col: baseCol });
-      const offsetCol = marblePos.x - (baseCol + 0.5);
-      const offsetRow = marblePos.y - (baseRow + 0.5);
-      return {
-        x: center.x + offsetCol * CELL_UNIT,
-        y: center.y + offsetRow * CELL_UNIT,
-      };
+      return curvedPointFromGrid(marblePos.x, marblePos.y, maze.rows, maze.cols);
     }
     return nodeCenter(player);
   }, [marbleMode, marblePos, player, maze.rows, maze.cols]);

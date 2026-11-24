@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { curvedPointFromGrid } from '../components/CurvedMazeSvg';
 import { generateMaze } from '../maze/generator';
 import type { Maze } from '../maze/types';
 import { createMarbleAt, MARBLE_RADIUS, stepMarblePhysics } from './marble';
@@ -84,5 +85,27 @@ describe('marble physics', () => {
     ]);
     expect(body.row).toBe(2);
     expect(body.col).toBe(1);
+  });
+
+  it('maps curved SVG marble coordinates continuously across cell boundaries', () => {
+    const rows = 5;
+    const cols = 5;
+    const step = 0.01;
+
+    // Sweep horizontally across all cell boundaries and outer margins
+    let prev = curvedPointFromGrid(0.25, 1.5, rows, cols);
+    for (let x = 0.25 + step; x <= cols - 0.25; x += step) {
+      const cur = curvedPointFromGrid(x, 1.5, rows, cols);
+      expect(Math.hypot(cur.x - prev.x, cur.y - prev.y)).toBeLessThan(1);
+      prev = cur;
+    }
+
+    // Sweep vertically across all cell boundaries and outer margins
+    prev = curvedPointFromGrid(2.5, 0.25, rows, cols);
+    for (let y = 0.25 + step; y <= rows - 0.25; y += step) {
+      const cur = curvedPointFromGrid(2.5, y, rows, cols);
+      expect(Math.hypot(cur.x - prev.x, cur.y - prev.y)).toBeLessThan(1);
+      prev = cur;
+    }
   });
 });
