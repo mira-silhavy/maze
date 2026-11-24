@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canMove, generateMaze, movePosition, positionKey } from './generator';
+import { generateMaze, gridStep, positionKey } from './generator';
 import {
   findPolarShortestPath,
   generatePolarMaze,
@@ -43,8 +43,8 @@ describe('maze generator and solver', () => {
     while (queue.length > 0) {
       const cur = queue.shift()!;
       for (const dir of dirs) {
-        if (canMove(maze, cur, dir)) {
-          const next = movePosition(cur, dir);
+        const next = gridStep(maze, cur, dir);
+        if (next) {
           const key = positionKey(next);
           if (!visited.has(key)) {
             visited.add(key);
@@ -78,7 +78,7 @@ describe('maze generator and solver', () => {
       else if (dCol === 1) dir = 'right';
       else dir = 'left';
 
-      expect(canMove(maze, a, dir)).toBe(true);
+      expect(gridStep(maze, a, dir)).toEqual(b);
     }
   });
 
@@ -110,7 +110,7 @@ describe('maze generator and solver', () => {
 
     for (const target of targets) {
       expect(target).not.toEqual(maze.start);
-      const openPassages = dirs.filter((d) => canMove(maze, target, d)).length;
+      const openPassages = dirs.filter((d) => gridStep(maze, target, d)).length;
       expect(openPassages).toBe(1);
     }
 

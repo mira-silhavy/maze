@@ -75,7 +75,15 @@ export function generateMaze(rows: number, cols: number): Maze {
   };
 }
 
-export function canMove(maze: Maze, from: Position, dir: Direction): boolean {
+export function gridStep(
+  maze: Maze,
+  from: Position,
+  dir: Direction,
+): Position | null {
+  return canMove(maze, from, dir) ? movePosition(from, dir) : null;
+}
+
+function canMove(maze: Maze, from: Position, dir: Direction): boolean {
   const cell = maze.grid[from.row]?.[from.col];
   if (!cell || cell.walls[dir]) {
     return false;
@@ -90,7 +98,7 @@ export function canMove(maze: Maze, from: Position, dir: Direction): boolean {
   );
 }
 
-export function movePosition(pos: Position, dir: Direction): Position {
+function movePosition(pos: Position, dir: Direction): Position {
   switch (dir) {
     case 'top':
       return { row: pos.row - 1, col: pos.col };

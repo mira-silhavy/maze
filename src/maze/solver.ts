@@ -1,4 +1,4 @@
-import { canMove, movePosition, positionKey } from './generator';
+import { gridStep, positionKey } from './generator';
 import type { Direction, Maze, Position } from './types';
 
 const ALL_DIRECTIONS: readonly Direction[] = ['top', 'right', 'bottom', 'left'];
@@ -36,10 +36,10 @@ export function findShortestPathToNearest(
     }
 
     for (const dir of ALL_DIRECTIONS) {
-      if (!canMove(maze, current, dir)) {
+      const next = gridStep(maze, current, dir);
+      if (!next) {
         continue;
       }
-      const next = movePosition(current, dir);
       const key = positionKey(next);
       if (!visited.has(key)) {
         visited.add(key);
@@ -67,7 +67,7 @@ export function selectDeadEndTargets(maze: Maze, maxCount: number): Position[] {
 
       let openCount = 0;
       for (const dir of ALL_DIRECTIONS) {
-        if (canMove(maze, pos, dir)) openCount++;
+        if (gridStep(maze, pos, dir)) openCount++;
       }
       if (openCount === 1) {
         deadEnds.push(pos);
@@ -86,8 +86,8 @@ export function selectDeadEndTargets(maze: Maze, maxCount: number): Position[] {
     const current = queue.shift()!;
     const dist = distances.get(positionKey(current))!;
     for (const dir of ALL_DIRECTIONS) {
-      if (!canMove(maze, current, dir)) continue;
-      const next = movePosition(current, dir);
+      const next = gridStep(maze, current, dir);
+      if (!next) continue;
       const key = positionKey(next);
       if (!distances.has(key)) {
         distances.set(key, dist + 1);

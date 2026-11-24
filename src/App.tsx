@@ -40,12 +40,7 @@ import { CircularMazeSvg } from './components/CircularMazeSvg';
 import { CurvedMazeSvg } from './components/CurvedMazeSvg';
 import { MazeCanvas } from './components/MazeCanvas';
 import { PrintableMazeSvg } from './components/PrintableMazeSvg';
-import {
-  canMove,
-  generateMaze,
-  movePosition,
-  positionKey,
-} from './maze/generator';
+import { generateMaze, gridStep, positionKey } from './maze/generator';
 import {
   findPolarMoveInDirection,
   findPolarShortestPath,
@@ -433,18 +428,15 @@ export default function App() {
         return;
       }
 
-      const chosenDir = canMove(prev.gridMaze, prev.gridPlayer, primary)
-        ? primary
-        : secondary && canMove(prev.gridMaze, prev.gridPlayer, secondary)
-          ? secondary
-          : null;
+      const nextPos =
+        gridStep(prev.gridMaze, prev.gridPlayer, primary) ??
+        (secondary ? gridStep(prev.gridMaze, prev.gridPlayer, secondary) : null);
 
-      if (!chosenDir) {
+      if (!nextPos) {
         if (soundEnabled) playWallBumpSound();
         return;
       }
 
-      const nextPos = movePosition(prev.gridPlayer, chosenDir);
       const nextKey = positionKey(nextPos);
 
       const prevBeforeLast =
