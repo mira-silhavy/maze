@@ -1,3 +1,4 @@
+import type { Language } from '../i18n';
 import type { PolarMaze } from '../maze/polar';
 import type { ThemeId } from '../themes/catalog';
 import type {
@@ -25,6 +26,7 @@ export interface Settings {
   bridges: boolean;
   marbleMode: boolean;
   fogOfWar: boolean;
+  language: Language;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bridges: false,
   marbleMode: false,
   fogOfWar: false,
+  language: 'cs',
 };
 
 export type SettingEffect = 'regenerate' | 'retarget' | 'none';
@@ -63,6 +66,7 @@ export const SETTING_EFFECT: Record<keyof Settings, SettingEffect> = {
   bridges: 'regenerate',
   marbleMode: 'none',
   fogOfWar: 'none',
+  language: 'none',
 };
 
 export interface Board<M, N> {

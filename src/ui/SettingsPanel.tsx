@@ -28,6 +28,7 @@ import type { GameState, Settings, TargetCount } from '../game/model';
 import { MAZE_STYLES } from '../game/styles';
 import type { Dispatch } from '../game/useGame';
 import { unlockAudio } from '../audio/sound';
+import { getMessages } from '../i18n';
 import { getThemeById, MAZE_THEMES, type ThemeId } from '../themes/catalog';
 import {
   ASPECT_RATIO_PRESETS,
@@ -99,6 +100,7 @@ export function SettingsPanel({
   const [showHelp, setShowHelp] = useState(false);
   const { settings, round, showHint } = state;
   const theme = getThemeById(settings.themeId);
+  const t = getMessages(settings.language);
   const { ui, isLight } = theme;
   const configure = (patch: Partial<Settings>) =>
     dispatch({ type: 'configure', patch });
@@ -134,8 +136,9 @@ export function SettingsPanel({
             const dims = getMazeDimensions(item, aspectRatio);
             const sizeText =
               round.kind === 'polar'
-                ? `${item.polarRings} kruhů`
+                ? t.ringsCount(item.polarRings)
                 : `${dims.cols}×${dims.rows}`;
+            const label = t.difficulties[item.id] ?? item.label;
             return (
               <OptionPill
                 key={item.id}
@@ -143,10 +146,10 @@ export function SettingsPanel({
                 activeClass="bg-sky-500 text-slate-950 shadow-sm shadow-sky-500/40"
                 idleClass={ui.pillIdle}
                 disabledClass={ui.pillDisabled}
-                title={`${item.label} (${sizeText})`}
+                title={`${label} (${sizeText})`}
                 onClick={() => configure({ difficultyId: item.id })}
               >
-                {item.label}
+                {label}
               </OptionPill>
             );
           })}
@@ -159,12 +162,14 @@ export function SettingsPanel({
               {ASPECT_RATIO_PRESETS.map((item) => {
                 const Icon = ASPECT_ICONS[item.id];
                 const active = item.id === settings.aspectRatioId;
+                const aspectLabel = t.aspects[item.id];
+                const aspectText = t.aspectTitle(aspectLabel, item.ratioText);
                 return (
                   <IconButton
                     key={item.id}
                     size="h-8 w-8"
-                    label={`Poměr stran: ${item.label} (${item.ratioText})`}
-                    title={`Poměr stran: ${item.label} (${item.ratioText})`}
+                    label={aspectText}
+                    title={aspectText}
                     tone={`transition ${active ? softActive.sky : ui.pillIdle}`}
                     onClick={() => configure({ aspectRatioId: item.id })}
                   >
@@ -183,29 +188,30 @@ export function SettingsPanel({
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition sm:text-sm ${
               showHint ? softActive.amber : ui.pillIdle
             }`}
-            title="Zobrazit nápovědu"
+            title={t.hintTitle}
           >
             <Lightbulb className="h-4 w-4" />
-            Nápověda
+            {t.hint}
           </button>
 
           <button
             type="button"
             onClick={() => dispatch({ type: 'restart' })}
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition sm:text-sm ${ui.pillIdle}`}
-            title="Vrátit se na start"
+            title={t.startTitle}
           >
             <RotateCcw className="h-4 w-4" />
-            Start
+            {t.start}
           </button>
 
           <button
             type="button"
             onClick={() => dispatch({ type: 'newMaze' })}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm"
+            title={t.newMazeTitle}
           >
             <RefreshCw className="h-4 w-4" />
-            Nové
+            {t.newMaze}
           </button>
 
           <div
@@ -214,12 +220,8 @@ export function SettingsPanel({
 
           <IconButton
             size="h-8 w-8"
-            label="Zobrazit stopu"
-            title={
-              settings.showTrail
-                ? 'Stopa zapnuta: kreslí prošlou cestu'
-                : 'Stopa vypnuta: cesta se nekreslí'
-            }
+            label={t.trailLabel}
+            title={settings.showTrail ? t.trailOnTitle : t.trailOffTitle}
             tone={`transition ${
               settings.showTrail ? softActive.sky : ui.pillMuted
             }`}
@@ -231,14 +233,15 @@ export function SettingsPanel({
           <SoundButton
             size="h-8 w-8"
             enabled={settings.sound}
+            language={settings.language}
             theme={theme}
             dispatch={dispatch}
           />
 
           <IconButton
             size="h-8 w-8"
-            label="Tisk na A4"
-            title="Vytisknout čisté černobílé bludiště na A4"
+            label={t.printLabel}
+            title={t.printTitle}
             tone={`transition ${ui.pillIdle}`}
             onClick={() => window.print()}
           >
@@ -247,8 +250,8 @@ export function SettingsPanel({
 
           <IconButton
             size="h-8 w-8"
-            label="Celá obrazovka"
-            title="Skrýt menu a roztáhnout bludiště na celou obrazovku (F)"
+            label={t.fullscreenLabel}
+            title={t.fullscreenTitle}
             tone={`transition ${ui.pillIdle}`}
             onClick={onEnterFocus}
           >
@@ -257,12 +260,22 @@ export function SettingsPanel({
 
           <IconButton
             size="h-8 w-8"
-            label="Nápověda k ovládání"
-            title={
-              showHelp
-                ? 'Skrýt nápovědu k ovládání'
-                : 'Zobrazit nápovědu k ovládání'
+            label={t.switchLanguageLabel}
+            title={t.switchLanguageTitle}
+            tone={`transition ${ui.pillIdle}`}
+            onClick={() =>
+              configure({ language: settings.language === 'cs' ? 'en' : 'cs' })
             }
+          >
+            <span className="text-[11px] font-bold tracking-tight">
+              {t.languageBadge}
+            </span>
+          </IconButton>
+
+          <IconButton
+            size="h-8 w-8"
+            label={t.helpLabel}
+            title={showHelp ? t.helpHideTitle : t.helpShowTitle}
             tone={`transition ${showHelp ? softActive.sky : ui.pillMuted}`}
             onClick={() => setShowHelp((open) => !open)}
           >
@@ -275,7 +288,7 @@ export function SettingsPanel({
         className={`flex flex-wrap items-center justify-between gap-3 border-t pt-2.5 ${ui.divider}`}
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-xs font-medium ${ui.label}`}>Režim:</span>
+          <span className={`text-xs font-medium ${ui.label}`}>{t.modeLabel}</span>
           {MODES.map((item) => (
             <OptionPill
               key={item.id}
@@ -286,9 +299,10 @@ export function SettingsPanel({
               idleClass={ui.pillIdle}
               disabledClass={ui.pillDisabled}
               Icon={item.Icon}
+              title={t.modeTitles[item.id]}
               onClick={() => configure({ mode: item.id })}
             >
-              {item.label}
+              {t.modes[item.id]}
             </OptionPill>
           ))}
           <OptionPill
@@ -297,13 +311,13 @@ export function SettingsPanel({
             idleClass={ui.pillIdle}
             disabledClass={ui.pillDisabled}
             Icon={Disc}
-            title="Kutálení kuličky nakláněním tabletu (na PC drž šipky / WASD)"
+            title={t.marbleTitle}
             onClick={() => {
               if (!settings.marbleMode) unlockAudio();
               configure({ marbleMode: !settings.marbleMode });
             }}
           >
-            Kulička
+            {t.marble}
           </OptionPill>
           <OptionPill
             active={settings.fogOfWar}
@@ -311,15 +325,15 @@ export function SettingsPanel({
             idleClass={ui.pillIdle}
             disabledClass={ui.pillDisabled}
             Icon={Flashlight}
-            title="Mlha války se svítilnou — neprozkoumané bludiště je skryté v temnotě"
+            title={t.fogTitle}
             onClick={() => configure({ fogOfWar: !settings.fogOfWar })}
           >
-            Mlha
+            {t.fog}
           </OptionPill>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-xs font-medium ${ui.label}`}>Styl:</span>
+          <span className={`text-xs font-medium ${ui.label}`}>{t.styleLabel}</span>
           {(Object.keys(MAZE_STYLES) as MazeStyle[]).map((style) => (
             <OptionPill
               key={style}
@@ -330,7 +344,7 @@ export function SettingsPanel({
               Icon={MAZE_STYLES[style].Icon}
               onClick={() => configure({ style })}
             >
-              {MAZE_STYLES[style].label}
+              {t.styles[style]}
             </OptionPill>
           ))}
           <OptionPill
@@ -340,10 +354,10 @@ export function SettingsPanel({
             disabledClass={ui.pillDisabled}
             Icon={Layers}
             disabled={!MAZE_STYLES[settings.style].supportsBridges}
-            title="Mosty (nad/pod) — počet roste s velikostí bludiště"
+            title={t.bridgesTitle}
             onClick={() => configure({ bridges: !settings.bridges })}
           >
-            Mosty
+            {t.bridges}
           </OptionPill>
           <OptionPill
             active={settings.braided}
@@ -351,10 +365,10 @@ export function SettingsPanel({
             idleClass={ui.pillIdle}
             disabledClass={ui.pillDisabled}
             Icon={InfinityIcon}
-            title="Propojí část slepých uliček do smyček (více možných cest)"
+            title={t.braidedTitle}
             onClick={() => configure({ braided: !settings.braided })}
           >
-            Smyčky
+            {t.braided}
           </OptionPill>
         </div>
       </div>
@@ -363,7 +377,9 @@ export function SettingsPanel({
         className={`flex flex-wrap items-center justify-between gap-3 border-t pt-2.5 ${ui.divider}`}
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`text-xs font-medium ${ui.label}`}>Generátor:</span>
+          <span className={`text-xs font-medium ${ui.label}`}>
+            {t.generatorLabel}
+          </span>
           {MAZE_ALGORITHMS.map((algo) => (
             <OptionPill
               key={algo.id}
@@ -374,13 +390,13 @@ export function SettingsPanel({
               Icon={GitBranch}
               onClick={() => configure({ algorithm: algo.id })}
             >
-              {algo.label}
+              {t.algorithms[algo.id]}
             </OptionPill>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`text-xs font-medium ${ui.label}`}>Motiv:</span>
+          <span className={`text-xs font-medium ${ui.label}`}>{t.themeLabel}</span>
           <div className="flex flex-wrap items-center gap-1.5">
             {MAZE_THEMES.map((item) => (
               <OptionPill
@@ -392,7 +408,7 @@ export function SettingsPanel({
                 Icon={THEME_ICONS[item.id]}
                 onClick={() => configure({ themeId: item.id })}
               >
-                {item.label}
+                {t.themes[item.id]}
               </OptionPill>
             ))}
           </div>
@@ -405,7 +421,7 @@ export function SettingsPanel({
         >
           <div className="flex flex-wrap items-center gap-2">
             <span className={`text-xs font-medium ${ui.label}`}>
-              Počet cílů:
+              {t.targetCountLabel}
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               {TARGET_COUNT_OPTIONS.map((item) => (
@@ -417,11 +433,15 @@ export function SettingsPanel({
                   disabledClass={ui.pillDisabled}
                   onClick={() => configure({ targetCount: item.value })}
                 >
-                  {item.label}
+                  {item.value === 'all' ? t.allTargets : item.label}
                 </OptionPill>
               ))}
             </div>
           </div>
+
+          <span className={`text-xs font-medium ${ui.label}`}>
+            {t.modeTitles.collect}
+          </span>
         </div>
       )}
 
@@ -429,13 +449,14 @@ export function SettingsPanel({
         <p
           className={`border-t pt-2.5 text-center text-xs ${ui.divider} ${ui.label}`}
         >
-          Ovládání:{' '}
+          {t.helpControls}{' '}
           <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>↑ ↓ ← →</kbd>,{' '}
-          <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>WASD</kbd> nebo{' '}
-          <span className={ui.statValue}>tažení prstem po bludišti</span> ·{' '}
-          <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>R</kbd> nové
-          bludiště · <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>F</kbd>{' '}
-          celá obrazovka
+          <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>WASD</kbd>{' '}
+          {t.helpOr} <span className={ui.statValue}>{t.helpDrag}</span> ·{' '}
+          <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>R</kbd>{' '}
+          {t.helpNewMaze} ·{' '}
+          <kbd className={`rounded px-1.5 py-0.5 ${ui.kbd}`}>F</kbd>{' '}
+          {t.helpFullscreen}
         </p>
       )}
     </section>

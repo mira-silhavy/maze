@@ -1,3 +1,4 @@
+import type { Language } from '../i18n';
 import {
   ASPECT_RATIO_PRESETS,
   DIFFICULTY_PRESETS,
@@ -22,6 +23,7 @@ const VALID_ALGORITHMS = new Set<MazeAlgorithm>(
   MAZE_ALGORITHMS.map((a) => a.id),
 );
 const VALID_THEMES = new Set<ThemeId>(MAZE_THEMES.map((t) => t.id));
+const VALID_LANGUAGES = new Set<Language>(['cs', 'en']);
 
 function isTargetCount(value: unknown): value is TargetCount {
   return (
@@ -74,6 +76,11 @@ export function parseSettings(raw: unknown): Settings {
     marbleMode:
       typeof obj.marbleMode === 'boolean' ? obj.marbleMode : d.marbleMode,
     fogOfWar: typeof obj.fogOfWar === 'boolean' ? obj.fogOfWar : d.fogOfWar,
+    language:
+      typeof obj.language === 'string' &&
+      VALID_LANGUAGES.has(obj.language as Language)
+        ? (obj.language as Language)
+        : d.language,
   };
 }
 

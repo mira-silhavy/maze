@@ -28,6 +28,7 @@ import {
   stopMarbleRollingSound,
   unlockAudio,
 } from '../audio/sound';
+import { getMessages } from '../i18n';
 import { getThemeById } from '../themes/catalog';
 import { WinOverlay } from '../ui/WinOverlay';
 import { CircularMaze } from './CircularMaze';
@@ -54,7 +55,8 @@ export function MazeStage({
   fullScreen: boolean;
 }) {
   const won = phase(state) === 'won';
-  const { marbleMode, sound, style } = state.settings;
+  const { marbleMode, sound, style, language } = state.settings;
+  const t = getMessages(language);
   const drag = useDragMove(dispatch, won || marbleMode);
   const { round } = state;
 
@@ -240,28 +242,24 @@ export function MazeStage({
               className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-amber-300"
             >
               <Compass className="h-3.5 w-3.5" />
-              Povolit náklon tabletu
+              {t.tiltEnable}
             </button>
           ) : permission === 'denied' ? (
-            <span className="text-amber-300">
-              Přístup k náklonu byl zamítnut (ovládej šipkami / WASD nebo povol senzory v prohlížeči)
-            </span>
+            <span className="text-amber-300">{t.tiltDenied}</span>
           ) : (
             <>
               <span className="text-slate-300">
-                {hasGyro
-                  ? 'Nakláněj tablet pro kutálení kuličky'
-                  : 'Nakláněj tablet (nebo drž šipky / WASD)'}
+                {hasGyro ? t.tiltHintGyro : t.tiltHintFallback}
               </span>
               {hasGyro && (
                 <button
                   type="button"
                   onClick={calibrate}
                   className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-slate-800 px-2 py-1 text-xs font-medium text-sky-300 transition hover:bg-slate-700"
-                  title="Nastavit aktuální náklon tabletu jako rovinu"
+                  title={t.tiltCalibrateTitle}
                 >
                   <RotateCw className="h-3 w-3" />
-                  Vyrovnat
+                  {t.tiltCalibrate}
                 </button>
               )}
             </>

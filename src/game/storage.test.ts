@@ -42,6 +42,7 @@ describe('settings storage', () => {
       bridges: true,
       marbleMode: true,
       fogOfWar: true,
+      language: 'en',
     };
 
     saveSettings(custom, store);

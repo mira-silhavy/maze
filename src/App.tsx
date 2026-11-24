@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { useFullscreenFocus } from './game/fullscreen';
 import { useKeyboard } from './game/input';
 import { phase } from './game/reduce';
 import { useGame } from './game/useGame';
+import { getMessages } from './i18n';
 import { MazeStage } from './renderers/MazeStage';
 import { PrintableMaze } from './renderers/PrintableMaze';
 import { getThemeById } from './themes/catalog';
@@ -14,6 +16,11 @@ import { StatsRow } from './ui/StatsRow';
 export default function App() {
   const { state, dispatch } = useGame();
   const theme = getThemeById(state.settings.themeId);
+  useEffect(() => {
+    const t = getMessages(state.settings.language);
+    document.documentElement.lang = state.settings.language;
+    document.title = t.appTitle;
+  }, [state.settings.language]);
   const {
     focusMode,
     browserFullscreen,

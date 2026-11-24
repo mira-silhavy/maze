@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { Round, Settings } from '../game/model';
+import { getMessages } from '../i18n';
 import {
   bridgeNeighbors,
   corridorLinks,
@@ -9,7 +10,7 @@ import { hasPolarPassage, polarCellId } from '../maze/polar';
 import type { Cell, Position } from '../maze/types';
 
 interface PrintableMazeSvgProps {
-  settings: Pick<Settings, 'style' | 'mode'>;
+  settings: Pick<Settings, 'style' | 'mode' | 'language'>;
   round: Round;
 }
 
@@ -59,7 +60,8 @@ function arcPath(radius: number, startAngle: number, endAngle: number): string {
 }
 
 export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
-  const { style: mazeStyle, mode: gameMode } = settings;
+  const { style: mazeStyle, mode: gameMode, language } = settings;
+  const t = getMessages(language);
   const gridMaze = round.kind === 'grid' ? round.board.maze : null;
   const gridTargets = round.kind === 'grid' ? round.board.targets : [];
   const polarMaze = round.kind === 'polar' ? round.board.maze : null;
@@ -142,13 +144,13 @@ export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
       <div className="mb-3 shrink-0 text-center">
         <h1 className="text-2xl font-bold text-black">
           {gameMode === 'collect'
-            ? `Bludiště: Od křížku ✕ ke kolečkům ◯ (${targetCount} koleček)`
-            : 'Bludiště: Start → Cíl'}
+            ? t.printCollectTitle(targetCount)
+            : t.printClassicTitle}
         </h1>
         <p className="mt-1 text-sm text-neutral-700">
           {gameMode === 'collect'
-            ? 'Začni na křížku ✕ a tužkou posbírej všechna kolečka ◯ na koncích slepých uliček.'
-            : 'Najdi tužkou cestu od startu (S) až do cíle (C).'}
+            ? t.printCollectSubtitle
+            : t.printClassicSubtitle}
         </p>
       </div>
 

@@ -11,6 +11,7 @@ import {
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
 import { unlockAudio } from '../audio/sound';
+import { getMessages } from '../i18n';
 import { getThemeById } from '../themes/catalog';
 import { IconButton, SoundButton } from './controls';
 
@@ -31,6 +32,7 @@ export function FocusToolbar({
 }) {
   const { settings, round, showHint } = state;
   const theme = getThemeById(settings.themeId);
+  const t = getMessages(settings.language);
   const { ui, isLight } = theme;
   const activeSky = isLight
     ? 'bg-sky-600/15 text-sky-800 ring-1 ring-sky-600/40'
@@ -60,8 +62,8 @@ export function FocusToolbar({
 
       <IconButton
         size="h-9 w-9"
-        label={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
-        title={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
+        label={settings.marbleMode ? t.focusMarbleOn : t.focusMarbleOff}
+        title={settings.marbleMode ? t.focusMarbleOn : t.focusMarbleOff}
         tone={`transition ${settings.marbleMode ? activeSky : ui.pillIdle}`}
         onClick={() => {
           if (!settings.marbleMode) unlockAudio();
@@ -76,8 +78,8 @@ export function FocusToolbar({
 
       <IconButton
         size="h-9 w-9"
-        label={settings.fogOfWar ? 'Vypnout mlhu' : 'Zapnout mlhu se svítilnou'}
-        title={settings.fogOfWar ? 'Vypnout mlhu' : 'Zapnout mlhu se svítilnou'}
+        label={settings.fogOfWar ? t.focusFogOn : t.focusFogOff}
+        title={settings.fogOfWar ? t.focusFogOn : t.focusFogOff}
         tone={`transition ${settings.fogOfWar ? activeAmber : ui.pillIdle}`}
         onClick={() =>
           dispatch({
@@ -92,14 +94,15 @@ export function FocusToolbar({
       <SoundButton
         size="h-9 w-9"
         enabled={settings.sound}
+        language={settings.language}
         theme={theme}
         dispatch={dispatch}
       />
 
       <IconButton
         size="h-9 w-9"
-        label="Nápověda"
-        title="Nápověda"
+        label={t.hint}
+        title={t.hint}
         tone={`transition ${showHint ? activeAmber : ui.pillIdle}`}
         onClick={() => dispatch({ type: 'toggleHint' })}
       >
@@ -108,8 +111,8 @@ export function FocusToolbar({
 
       <IconButton
         size="h-9 w-9"
-        label="Nové bludiště"
-        title="Nové bludiště"
+        label={t.newMazeTitle}
+        title={t.newMazeTitle}
         tone="bg-emerald-500 text-slate-950 transition hover:bg-emerald-400"
         onClick={() => dispatch({ type: 'newMaze' })}
       >
@@ -121,13 +124,13 @@ export function FocusToolbar({
           size="h-9 w-9"
           label={
             browserFullscreen
-              ? 'Ukončit celou obrazovku prohlížeče'
-              : 'Skrýt lišty prohlížeče'
+              ? t.focusBrowserFullscreenExit
+              : t.focusBrowserFullscreenEnter
           }
           title={
             browserFullscreen
-              ? 'Ukončit celou obrazovku prohlížeče'
-              : 'Skrýt lišty prohlížeče'
+              ? t.focusBrowserFullscreenExit
+              : t.focusBrowserFullscreenEnter
           }
           tone={`transition ${browserFullscreen ? activeSky : ui.pillIdle}`}
           onClick={onToggleBrowserFullscreen}
@@ -144,10 +147,10 @@ export function FocusToolbar({
         type="button"
         onClick={onExit}
         className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-400 sm:text-sm"
-        title="Zobrazit menu (Esc)"
+        title={t.focusMenuTitle}
       >
         <Minimize2 className="h-4 w-4" />
-        Menu
+        {t.focusMenu}
       </button>
     </div>
   );

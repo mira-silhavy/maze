@@ -1,7 +1,7 @@
 import { RefreshCw, Trophy } from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
-import { getThemeById } from '../themes/catalog';
+import { getMessages } from '../i18n';
 import { formatTime } from './formatTime';
 
 export function WinOverlay({
@@ -12,7 +12,8 @@ export function WinOverlay({
   dispatch: Dispatch;
 }) {
   const { settings, round, elapsedSeconds } = state;
-  const theme = getThemeById(settings.themeId);
+  const t = getMessages(settings.language);
+  const story = t.stories[settings.themeId];
   const totalTargets = round.board.targets.length;
   return (
     <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/75 backdrop-blur-sm">
@@ -22,18 +23,18 @@ export function WinOverlay({
         </div>
         <h2 className="text-2xl font-bold text-white">
           {settings.mode === 'collect'
-            ? theme.story.winCollectTitle
-            : theme.story.winClassicTitle}
+            ? story.winCollectTitle
+            : story.winClassicTitle}
         </h2>
         <p className="mt-2 text-sm text-slate-300">
-          Čas:{' '}
+          {t.winTime}{' '}
           <strong className="text-white">
             {formatTime(elapsedSeconds)}
           </strong>{' '}
-          · Kroky: <strong className="text-white">{round.run.steps}</strong>
+          · {t.winSteps} <strong className="text-white">{round.run.steps}</strong>
           {settings.mode === 'classic'
-            ? ` (optimum ${round.board.optimalSteps})`
-            : ` · ${theme.story.collectLabel}: ${totalTargets}/${totalTargets}`}
+            ? ` ${t.winOptimum(round.board.optimalSteps)}`
+            : ` · ${story.collectLabel}: ${totalTargets}/${totalTargets}`}
         </p>
         <button
           type="button"
@@ -41,7 +42,7 @@ export function WinOverlay({
           className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
         >
           <RefreshCw className="h-4 w-4" />
-          Nové bludiště
+          {t.winNewMaze}
         </button>
       </div>
     </div>

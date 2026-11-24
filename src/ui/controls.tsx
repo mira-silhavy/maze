@@ -1,6 +1,7 @@
 import { Volume2, VolumeX, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Dispatch } from '../game/useGame';
+import { getMessages, type Language } from '../i18n';
 import type { MazeTheme } from '../themes/catalog';
 
 export function OptionPill({
@@ -72,15 +73,18 @@ export function IconButton({
 export function SoundButton({
   size,
   enabled,
+  language = 'cs',
   theme,
   dispatch,
 }: {
   size: 'h-8 w-8' | 'h-9 w-9';
   enabled: boolean;
+  language?: Language;
   theme?: MazeTheme;
   dispatch: Dispatch;
 }) {
-  const label = enabled ? 'Vypnout zvuky' : 'Zapnout zvuky';
+  const t = getMessages(language);
+  const label = enabled ? t.soundOnTitle : t.soundOffTitle;
   const onTone =
     theme?.ui.pillIdle ?? 'bg-slate-800 text-slate-200 hover:bg-slate-700';
   const offTone =
