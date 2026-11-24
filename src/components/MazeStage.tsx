@@ -46,7 +46,7 @@ export function MazeStage({
 }) {
   const won = phase(state) === 'won';
   const { marbleMode, sound, style } = state.settings;
-  const drag = useDragMove(dispatch, won);
+  const drag = useDragMove(dispatch, won || marbleMode);
   const { round } = state;
 
   const { tiltRef, permission, hasGyro, requestPermission, calibrate } =
@@ -167,8 +167,8 @@ export function MazeStage({
       {...drag}
       className={
         fullScreen
-          ? 'relative flex h-full w-full touch-none select-none justify-center cursor-grab active:cursor-grabbing'
-          : 'relative flex w-full touch-none select-none justify-center cursor-grab active:cursor-grabbing'
+          ? `relative flex h-full w-full touch-none select-none justify-center ${marbleMode ? '' : 'cursor-grab active:cursor-grabbing'}`
+          : `relative flex w-full touch-none select-none justify-center ${marbleMode ? '' : 'cursor-grab active:cursor-grabbing'}`
       }
     >
       {marbleMode && !won && (

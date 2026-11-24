@@ -69,7 +69,9 @@ export default function App() {
           )}
           {!focusMode && <StatsRow state={state} />}
           <MazeStage state={state} dispatch={dispatch} fullScreen={focusMode} />
-          {!focusMode && <DPad dispatch={dispatch} />}
+          {!focusMode && !state.settings.marbleMode && (
+            <DPad dispatch={dispatch} />
+          )}
         </main>
       </div>
     </>
