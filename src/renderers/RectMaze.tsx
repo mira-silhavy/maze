@@ -24,7 +24,7 @@ import {
   drawThemedBridgeDeckCanvas,
   drawThemedBridgeRailsCanvas,
   strokeThemedWallsCanvas,
-} from '../themes/scene';
+} from '../themes/sceneCanvas';
 
 interface RectMazeProps {
   maze: Maze;

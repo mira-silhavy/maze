@@ -14,7 +14,7 @@ import {
   ThemedTargetSvg,
 } from '../themes/art';
 import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from '../themes/catalog';
-import { ThemedWallPathSvg } from '../themes/scene';
+import { ThemedWallPathSvg } from '../themes/sceneSvg';
 
 interface CircularMazeProps {
   maze: PolarMaze;

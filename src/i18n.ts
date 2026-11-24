@@ -4,9 +4,18 @@ import type {
   MazeAlgorithm,
   MazeStyle,
 } from './maze/types';
-import type { ThemeId, ThemeStory } from './themes/catalog';
+import type { ThemeId } from './themes/catalog';
 
 export type Language = 'cs' | 'en';
+
+export interface ThemeStory {
+  classicSubtitle: string;
+  circularSubtitle: string;
+  collectSubtitle: string;
+  winClassicTitle: string;
+  winCollectTitle: string;
+  collectLabel: string;
+}
 
 export interface Messages {
   appTitle: string;

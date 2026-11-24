@@ -26,7 +26,7 @@ import {
   ThemedCurvedBridgeBaseSvg,
   ThemedCurvedBridgeOverlaySvg,
   type CurvedBridgeCorner,
-} from '../themes/scene';
+} from '../themes/sceneSvg';
 
 interface CurvedMazeProps {
   maze: Maze;

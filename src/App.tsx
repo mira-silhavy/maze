@@ -7,7 +7,7 @@ import { getMessages } from './i18n';
 import { MazeStage } from './renderers/MazeStage';
 import { PrintableMaze } from './renderers/PrintableMaze';
 import { getThemeById } from './themes/catalog';
-import { PageBackdrop } from './themes/scene';
+import { PageBackdrop } from './themes/backdrop';
 import { FocusToolbar } from './ui/FocusToolbar';
 import { Header } from './ui/Header';
 import { SettingsPanel } from './ui/SettingsPanel';

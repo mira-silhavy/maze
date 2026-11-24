@@ -36,15 +36,6 @@ export interface ThemeSceneConfig {
   bridgeRailCore?: string;
 }
 
-export interface ThemeStory {
-  classicSubtitle: string;
-  circularSubtitle: string;
-  collectSubtitle: string;
-  winClassicTitle: string;
-  winCollectTitle: string;
-  collectLabel: string;
-}
-
 export interface MarblePalette {
   base: string;
   mid: string;
@@ -68,7 +59,6 @@ export interface ThemeUiClasses {
 
 export interface MazeTheme {
   id: ThemeId;
-  label: string;
   isLight: boolean;
   background: string;
   corridorFloor: string;
@@ -90,7 +80,6 @@ export interface MazeTheme {
   lightTint: string;
   containerClass: string;
   ui: ThemeUiClasses;
-  story: ThemeStory;
   marble: MarblePalette;
   scene: ThemeSceneConfig;
 }
@@ -100,7 +89,6 @@ export const CORRIDOR_FLOOR_OPACITY = 0.6;
 export const MAZE_THEMES: MazeTheme[] = [
   {
     id: 'space',
-    label: 'Vesmír',
     isLight: false,
     background: '#050816',
     corridorFloor: '#0d142c',
@@ -139,14 +127,6 @@ export const MAZE_THEMES: MazeTheme[] = [
       statValue: 'text-white',
       kbd: 'bg-slate-800 text-slate-200',
     },
-    story: {
-      classicSubtitle: 'Doveď raketu vesmírným bludištěm až k planetě!',
-      circularSubtitle: 'Vyleť s raketou od okraje galaxie až k planetě v jejím středu!',
-      collectSubtitle: 'Vyleť od křížku ✕ a posbírej všechny zářící hvězdy!',
-      winClassicTitle: 'Přistání na planetě!',
-      winCollectTitle: 'Všechny hvězdy posbírány!',
-      collectLabel: 'Hvězdy',
-    },
     marble: {
       base: '#0284c7',
       mid: '#38bdf8',
@@ -167,7 +147,6 @@ export const MAZE_THEMES: MazeTheme[] = [
   },
   {
     id: 'hologram',
-    label: 'Hologram',
     isLight: false,
     background: '#030a16',
     corridorFloor: '#061529',
@@ -206,14 +185,6 @@ export const MAZE_THEMES: MazeTheme[] = [
       statValue: 'text-white',
       kbd: 'bg-slate-800 text-slate-200',
     },
-    story: {
-      classicSubtitle: 'Proleť holografickou hvězdnou mapou až k cílové planetě!',
-      circularSubtitle: 'Proleť od okraje radaru až k cíli ve středu hvězdné mapy!',
-      collectSubtitle: 'Vydej se od křížku ✕ a zachyť všechny zářící signály!',
-      winClassicTitle: 'Cíl zaměřen!',
-      winCollectTitle: 'Všechny signály zachyceny!',
-      collectLabel: 'Signály',
-    },
     marble: {
       base: '#0e7490',
       mid: '#22d3ee',
@@ -234,7 +205,6 @@ export const MAZE_THEMES: MazeTheme[] = [
   },
   {
     id: 'forest',
-    label: 'Les',
     isLight: false,
     background: '#03190d',
     corridorFloor: '#09301b',
@@ -273,14 +243,6 @@ export const MAZE_THEMES: MazeTheme[] = [
       statValue: 'text-white',
       kbd: 'bg-emerald-950 text-emerald-100',
     },
-    story: {
-      classicSubtitle: 'Pomoz lišce projít lesem až k útulné chatce!',
-      circularSubtitle: 'Proveď lišku od okraje lesa až k chatce v jeho středu!',
-      collectSubtitle: 'Vydej se od křížku ✕ a posbírej všechny lesní plody!',
-      winClassicTitle: 'Liška je v chatce!',
-      winCollectTitle: 'Všechny plody posbírány!',
-      collectLabel: 'Plody',
-    },
     marble: {
       base: '#c2410c',
       mid: '#fb923c',
@@ -302,7 +264,6 @@ export const MAZE_THEMES: MazeTheme[] = [
   },
   {
     id: 'pirate',
-    label: 'Poklad',
     isLight: true,
     background: '#fdf6e3',
     corridorFloor: '#f6e4bc',
@@ -341,14 +302,6 @@ export const MAZE_THEMES: MazeTheme[] = [
       statValue: 'text-amber-950',
       kbd: 'bg-amber-900/15 text-amber-950',
     },
-    story: {
-      classicSubtitle: 'Doveď pirátskou loď po mapě až k truhle s pokladem!',
-      circularSubtitle: 'Vypluj od pobřeží ostrova až k truhle s pokladem uprostřed!',
-      collectSubtitle: 'Vypluj od křížku ✕ a posbírej všechny zlaté mince!',
-      winClassicTitle: 'Poklad nalezen!',
-      winCollectTitle: 'Všechny mince posbírány!',
-      collectLabel: 'Mince',
-    },
     marble: {
       base: '#b45309',
       mid: '#f59e0b',
@@ -369,7 +322,6 @@ export const MAZE_THEMES: MazeTheme[] = [
   },
   {
     id: 'paper',
-    label: 'Papír',
     isLight: true,
     background: '#fcfcfd',
     corridorFloor: '#f8fafc',
@@ -407,14 +359,6 @@ export const MAZE_THEMES: MazeTheme[] = [
         'border-slate-900/12 bg-white/75 backdrop-blur-md',
       statValue: 'text-slate-900',
       kbd: 'bg-slate-900/10 text-slate-800',
-    },
-    story: {
-      classicSubtitle: 'Najdi tužkou cestu z levého horního rohu do zeleného cíle.',
-      circularSubtitle: 'Dostaň se od okraje kruhového bludiště až do jeho středu.',
-      collectSubtitle: 'Od křížku ✕ ke kolečkům ◯ — posbírej všechna kolečka!',
-      winClassicTitle: 'Bludiště vyřešeno!',
-      winCollectTitle: 'Všechna kolečka posbírána!',
-      collectLabel: 'Kolečka',
     },
     marble: {
       base: '#1d4ed8',
