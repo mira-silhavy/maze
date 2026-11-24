@@ -85,6 +85,10 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
+export function unlockAudio(): void {
+  void getAudioContext();
+}
+
 function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
   if (noiseBuffer && noiseBuffer.sampleRate === ctx.sampleRate) {
     return noiseBuffer;

@@ -21,6 +21,7 @@ import {
   playMarbleBumpSound,
   setMarbleRollingSpeed,
   stopMarbleRollingSound,
+  unlockAudio,
 } from '../maze/sound';
 import { getThemeById } from '../maze/themes';
 import { CircularMazeSvg } from './CircularMazeSvg';
@@ -178,7 +179,10 @@ export function MazeStage({
           {permission === 'prompt' ? (
             <button
               type="button"
-              onClick={() => void requestPermission()}
+              onClick={() => {
+                unlockAudio();
+                void requestPermission();
+              }}
               className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-amber-300"
             >
               <Compass className="h-3.5 w-3.5" />

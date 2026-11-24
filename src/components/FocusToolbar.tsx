@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
+import { unlockAudio } from '../maze/sound';
 import { IconButton, SoundButton } from './controls';
 
 export function FocusToolbar({
@@ -47,12 +48,13 @@ export function FocusToolbar({
             ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50'
             : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
         }`}
-        onClick={() =>
+        onClick={() => {
+          if (!settings.marbleMode) unlockAudio();
           dispatch({
             type: 'configure',
             patch: { marbleMode: !settings.marbleMode },
-          })
-        }
+          });
+        }}
       >
         <Disc className="h-4 w-4" />
       </IconButton>

@@ -23,6 +23,7 @@ import {
 import type { GameState, Settings, TargetCount } from '../game/model';
 import { MAZE_STYLES } from '../game/styles';
 import type { Dispatch } from '../game/useGame';
+import { unlockAudio } from '../maze/sound';
 import { MAZE_THEMES, type ThemeId } from '../maze/themes';
 import {
   ASPECT_RATIO_PRESETS,
@@ -223,7 +224,10 @@ export function SettingsPanel({
             activeClass="bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50"
             Icon={Disc}
             title="Kutálení kuličky nakláněním tabletu (na PC drž šipky / WASD)"
-            onClick={() => configure({ marbleMode: !settings.marbleMode })}
+            onClick={() => {
+              if (!settings.marbleMode) unlockAudio();
+              configure({ marbleMode: !settings.marbleMode });
+            }}
           >
             Kulička
           </OptionPill>
