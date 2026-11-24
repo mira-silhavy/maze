@@ -82,7 +82,6 @@ export function withGeometry<R>(
     : f(polarGeometry, round);
 }
 
-/** Returning the input round from `f` keeps the outer round's identity. */
 export function updateRound<X>(
   round: Round,
   f: <M, N>(

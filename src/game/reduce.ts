@@ -27,8 +27,8 @@ import {
   type Transition,
   type Vector,
 } from './model';
+import { MAZE_STYLES } from './styles';
 
-/** Returns the same state object when nothing changed. */
 export function reduce(state: GameState, command: Command): Transition {
   switch (command.type) {
     case 'move': {
@@ -107,7 +107,7 @@ function createRound(settings: Settings): Round {
   const aspect = ASPECT_RATIO_PRESETS.find(
     (p) => p.id === settings.aspectRatioId,
   )!;
-  if (settings.style === 'circular') {
+  if (MAZE_STYLES[settings.style].geometry === 'polar') {
     return {
       kind: 'polar',
       ...buildRound(polarGeometry, difficulty, aspect, settings.targetCount),

@@ -55,7 +55,6 @@ export interface Board<M, N> {
   optimalSteps: number;
 }
 
-/** The player is the last trail node; visited is the set of trail keys. */
 export interface Run<N> {
   trail: [N, ...N[]];
   collected: Set<string>;
