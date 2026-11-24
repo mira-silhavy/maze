@@ -196,7 +196,14 @@ export function MazeCanvas({
             activeY,
             Math.max(4, cellSize * 0.29),
             theme,
-            under,
+            {
+              under,
+              elevated: !under && activeLevel === 'over',
+              u: marble.u,
+              v: marble.v,
+              squash: marble.squash,
+              squashAxis: marble.squashAxis,
+            },
           );
         } else {
           drawThemedPlayerCanvas(ctx, activeX, activeY, cellSize, theme, under);
@@ -295,9 +302,28 @@ export function MazeCanvas({
         });
       };
 
-      // Continuous pencil line along player's path
+      // Continuous pencil line along player's path (smoothly reaching the live marble tip)
       if (trail.length > 1) {
         strokeTrail(trail);
+      }
+      if (marble && trail.length >= 1) {
+        const last = trail[trail.length - 1];
+        const lastX = offsetX + (last.col + 0.5) * cellSize;
+        const lastY = offsetY + (last.row + 0.5) * cellSize;
+        if (Math.hypot(activeX - lastX, activeY - lastY) > 0.5) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.strokeStyle = theme.pencilLine;
+          ctx.lineWidth = Math.max(2.5, cellSize * 0.22);
+          ctx.lineCap = 'round';
+          ctx.shadowColor = theme.pencilGlow;
+          ctx.shadowBlur = theme.isLight ? 3 : 6;
+          ctx.globalAlpha = theme.isLight ? 0.85 : 0.78;
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(activeX, activeY);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
       // Start cell highlight / cross in collect mode

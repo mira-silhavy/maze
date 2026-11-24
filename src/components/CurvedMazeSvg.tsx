@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { Vec3 } from '../game/marble';
 import {
   bridgeNeighbors,
   corridorLinks,
@@ -32,7 +33,13 @@ interface CurvedMazeSvgProps {
   collected: Set<string>;
   theme: MazeTheme;
   marbleMode?: boolean;
-  marblePos?: { x: number; y: number; level?: 'over' | 'under' } | null;
+  marblePos?: {
+    x: number;
+    y: number;
+    level?: 'over' | 'under';
+    u?: Vec3;
+    v?: Vec3;
+  } | null;
   fullScreen?: boolean;
 }
 
@@ -164,6 +171,9 @@ export function CurvedMazeSvg({
       r={10.5}
       theme={theme}
       idPrefix="curved"
+      u={marblePos?.u}
+      v={marblePos?.v}
+      elevated={effectiveLevel === 'over'}
     />
   ) : (
     <ThemedPlayerSvg x={playerPos.x} y={playerPos.y} r={10.5} theme={theme} />

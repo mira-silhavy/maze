@@ -12,6 +12,7 @@ import {
   createMarbleAt,
   stepMarblePhysics,
   type MarbleBody,
+  type Vec3,
 } from '../game/marble';
 import type { GameState, Round } from '../game/model';
 import { hintPath, phase, playerOf, visitedKeys } from '../game/reduce';
@@ -59,6 +60,8 @@ export function MazeStage({
     x: number;
     y: number;
     level?: 'over' | 'under';
+    u?: Vec3;
+    v?: Vec3;
   } | null>(null);
 
   // Sync marble position when starting a new maze, restarting, or toggling marble mode
@@ -79,6 +82,8 @@ export function MazeStage({
             x: marbleRef.current.x,
             y: marbleRef.current.y,
             level: marbleRef.current.level,
+            u: marbleRef.current.u,
+            v: marbleRef.current.v,
           });
         }
       }
@@ -117,6 +122,8 @@ export function MazeStage({
             x: result.body.x,
             y: result.body.y,
             level: result.body.level,
+            u: result.body.u,
+            v: result.body.v,
           });
         }
 
@@ -235,7 +242,13 @@ function GridView({
   curvedMarblePos,
 }: ViewProps<Extract<Round, { kind: 'grid' }>> & {
   marbleRef: MutableRefObject<MarbleBody>;
-  curvedMarblePos: { x: number; y: number; level?: 'over' | 'under' } | null;
+  curvedMarblePos: {
+    x: number;
+    y: number;
+    level?: 'over' | 'under';
+    u?: Vec3;
+    v?: Vec3;
+  } | null;
 }) {
   const { mode, style, aspectRatioId, themeId, marbleMode } = state.settings;
   const visited = useMemo(

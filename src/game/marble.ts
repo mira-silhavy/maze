@@ -2,6 +2,8 @@ import { gridStep } from '../maze/generator';
 import type { Direction, Level, Maze, Position } from '../maze/types';
 import type { TiltVector } from './tilt';
 
+export type Vec3 = [number, number, number];
+
 export interface MarbleBody {
   x: number;
   y: number;
@@ -10,6 +12,12 @@ export interface MarbleBody {
   row: number;
   col: number;
   level?: Level;
+  /** Orthonormal 3D basis vectors tracking true rolling orientation on the sphere. */
+  u: Vec3;
+  v: Vec3;
+  /** Brief damped squash pulse on wall impact (0..1). */
+  squash: number;
+  squashAxis: 'x' | 'y';
 }
 
 export interface MarbleStepResult {
@@ -26,6 +34,34 @@ const MAX_SPEED = 6.5;
 const BOUNCE = 0.28;
 const SUBSTEPS = 3;
 
+function rotateVec3(
+  vec: Vec3,
+  axisX: number,
+  axisY: number,
+  angle: number,
+): Vec3 {
+  // Rodrigues' rotation around unit axis (axisX, axisY, 0)
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const [vx, vy, vz] = vec;
+  const dot = vx * axisX + vy * axisY;
+  // axis × vec = (axisY * vz, -axisX * vz, axisX * vy - axisY * vx)
+  const cx = axisY * vz;
+  const cy = -axisX * vz;
+  const cz = axisX * vy - axisY * vx;
+
+  return [
+    vx * cos + cx * sin + axisX * dot * (1 - cos),
+    vy * cos + cy * sin + axisY * dot * (1 - cos),
+    vz * cos + cz * sin,
+  ];
+}
+
+function normalizeVec3(v: Vec3): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
 export function createMarbleAt(pos: Position): MarbleBody {
   return {
     x: pos.col + 0.5,
@@ -35,6 +71,10 @@ export function createMarbleAt(pos: Position): MarbleBody {
     row: pos.row,
     col: pos.col,
     level: pos.level,
+    u: [1, 0, 0],
+    v: [0, 1, 0],
+    squash: 0,
+    squashAxis: 'x',
   };
 }
 
@@ -47,11 +87,17 @@ export function stepMarblePhysics(
   const clampedDt = Math.min(0.05, Math.max(0, dtSec));
   const subDt = clampedDt / SUBSTEPS;
 
-  let { x, y, vx, vy, row, col, level } = prev;
+  let { x, y, vx, vy, row, col, level, u, v, squash, squashAxis } = prev;
   const enteredCells: Array<{ dx: number; dy: number }> = [];
   let maxBump = 0;
 
+  squash *= Math.exp(-16 * clampedDt);
+  if (squash < 0.005) squash = 0;
+
   for (let s = 0; s < SUBSTEPS; s++) {
+    const startX = x;
+    const startY = y;
+
     vx += tilt.gx * ACCEL * subDt;
     vy += tilt.gy * ACCEL * subDt;
 
@@ -78,22 +124,50 @@ export function stepMarblePhysics(
     // Collide with blocked walls of current cell
     if (!openLeft && x < col + MARBLE_RADIUS) {
       x = col + MARBLE_RADIUS;
-      if (vx < -0.6) maxBump = Math.max(maxBump, Math.min(1, -vx / MAX_SPEED));
+      if (vx < -0.6) {
+        const hit = Math.min(1, -vx / MAX_SPEED);
+        maxBump = Math.max(maxBump, hit);
+        if (hit > squash) {
+          squash = hit;
+          squashAxis = 'x';
+        }
+      }
       if (vx < 0) vx = -vx * BOUNCE;
     }
     if (!openRight && x > col + 1 - MARBLE_RADIUS) {
       x = col + 1 - MARBLE_RADIUS;
-      if (vx > 0.6) maxBump = Math.max(maxBump, Math.min(1, vx / MAX_SPEED));
+      if (vx > 0.6) {
+        const hit = Math.min(1, vx / MAX_SPEED);
+        maxBump = Math.max(maxBump, hit);
+        if (hit > squash) {
+          squash = hit;
+          squashAxis = 'x';
+        }
+      }
       if (vx > 0) vx = -vx * BOUNCE;
     }
     if (!openTop && y < row + MARBLE_RADIUS) {
       y = row + MARBLE_RADIUS;
-      if (vy < -0.6) maxBump = Math.max(maxBump, Math.min(1, -vy / MAX_SPEED));
+      if (vy < -0.6) {
+        const hit = Math.min(1, -vy / MAX_SPEED);
+        maxBump = Math.max(maxBump, hit);
+        if (hit > squash) {
+          squash = hit;
+          squashAxis = 'y';
+        }
+      }
       if (vy < 0) vy = -vy * BOUNCE;
     }
     if (!openBottom && y > row + 1 - MARBLE_RADIUS) {
       y = row + 1 - MARBLE_RADIUS;
-      if (vy > 0.6) maxBump = Math.max(maxBump, Math.min(1, vy / MAX_SPEED));
+      if (vy > 0.6) {
+        const hit = Math.min(1, vy / MAX_SPEED);
+        maxBump = Math.max(maxBump, hit);
+        if (hit > squash) {
+          squash = hit;
+          squashAxis = 'y';
+        }
+      }
       if (vy > 0) vy = -vy * BOUNCE;
     }
 
@@ -121,6 +195,19 @@ export function stepMarblePhysics(
       }
     }
 
+    // Roll the 3D sphere basis based on actual distance traveled
+    const stepDx = x - startX;
+    const stepDy = y - startY;
+    const stepDist = Math.hypot(stepDx, stepDy);
+    if (stepDist > 1e-5) {
+      // Rolling along (stepDx, stepDy) rotates around perpendicular axis (-stepDy, stepDx, 0)
+      const axisX = -stepDy / stepDist;
+      const axisY = stepDx / stepDist;
+      const angle = stepDist / MARBLE_RADIUS;
+      u = normalizeVec3(rotateVec3(u, axisX, axisY, angle));
+      v = normalizeVec3(rotateVec3(v, axisX, axisY, angle));
+    }
+
     // Check cell transitions along open passages
     let dir: Direction | null = null;
     if (x < col && openLeft) dir = 'left';
@@ -143,7 +230,7 @@ export function stepMarblePhysics(
 
   const finalSpeed = Math.hypot(vx, vy);
   return {
-    body: { x, y, vx, vy, row, col, level },
+    body: { x, y, vx, vy, row, col, level, u, v, squash, squashAxis },
     enteredCells,
     bumpIntensity: maxBump,
     speedNormalized: Math.min(1, finalSpeed / (MAX_SPEED * 0.85)),
