@@ -1,4 +1,4 @@
-import { generateMaze, gridStep, positionKey } from '../maze/generator';
+import { generateMaze, gridStep, positionKey } from '../maze/grid';
 import {
   findPolarMoveInDirection,
   findPolarShortestPath,

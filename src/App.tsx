@@ -1,17 +1,19 @@
-import { DPad } from './components/DPad';
-import { FocusToolbar } from './components/FocusToolbar';
-import { Header } from './components/Header';
-import { MazeStage } from './components/MazeStage';
-import { PrintableMazeSvg } from './components/PrintableMazeSvg';
-import { SettingsPanel } from './components/SettingsPanel';
-import { StatsRow } from './components/StatsRow';
 import { useFullscreenFocus } from './game/fullscreen';
 import { useKeyboard } from './game/input';
 import { phase } from './game/reduce';
 import { useGame } from './game/useGame';
+import { MazeStage } from './renderers/MazeStage';
+import { PrintableMaze } from './renderers/PrintableMaze';
+import { getThemeById } from './themes/catalog';
+import { PageBackdrop } from './themes/scene';
+import { FocusToolbar } from './ui/FocusToolbar';
+import { Header } from './ui/Header';
+import { SettingsPanel } from './ui/SettingsPanel';
+import { StatsRow } from './ui/StatsRow';
 
 export default function App() {
   const { state, dispatch } = useGame();
+  const theme = getThemeById(state.settings.themeId);
   const {
     focusMode,
     browserFullscreen,
@@ -31,13 +33,14 @@ export default function App() {
 
   return (
     <>
-      <PrintableMazeSvg settings={state.settings} round={state.round} />
+      <PrintableMaze settings={state.settings} round={state.round} />
+      <PageBackdrop theme={theme} />
 
       <div
         className={
           focusMode
-            ? 'fixed inset-0 flex h-dvh w-screen flex-col items-center justify-center bg-slate-950 p-2 text-slate-100 sm:p-3 print:hidden'
-            : 'flex min-h-screen flex-col items-center bg-slate-950 px-4 py-6 text-slate-100 print:hidden'
+            ? 'fixed inset-0 z-10 flex h-dvh w-screen flex-col items-center justify-center p-2 sm:p-3 print:hidden'
+            : 'relative z-10 flex min-h-screen flex-col items-center px-4 py-6 print:hidden'
         }
       >
         {focusMode ? (
@@ -69,9 +72,6 @@ export default function App() {
           )}
           {!focusMode && <StatsRow state={state} />}
           <MazeStage state={state} dispatch={dispatch} fullScreen={focusMode} />
-          {!focusMode && !state.settings.marbleMode && (
-            <DPad dispatch={dispatch} />
-          )}
         </main>
       </div>
     </>

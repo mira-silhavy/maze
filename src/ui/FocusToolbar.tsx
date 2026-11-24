@@ -1,6 +1,7 @@
 import {
   CircleDot,
   Disc,
+  Flashlight,
   Lightbulb,
   Maximize,
   Minimize,
@@ -9,7 +10,8 @@ import {
 } from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
-import { unlockAudio } from '../maze/sound';
+import { unlockAudio } from '../audio/sound';
+import { getThemeById } from '../themes/catalog';
 import { IconButton, SoundButton } from './controls';
 
 export function FocusToolbar({
@@ -28,10 +30,27 @@ export function FocusToolbar({
   onToggleBrowserFullscreen: () => void;
 }) {
   const { settings, round, showHint } = state;
+  const theme = getThemeById(settings.themeId);
+  const { ui, isLight } = theme;
+  const activeSky = isLight
+    ? 'bg-sky-600/15 text-sky-800 ring-1 ring-sky-600/40'
+    : 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50';
+  const activeAmber = isLight
+    ? 'bg-amber-600/15 text-amber-900 ring-1 ring-amber-600/40'
+    : 'bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/50';
+
   return (
-    <div className="fixed top-3 right-3 z-20 flex items-center gap-1.5 rounded-2xl border border-slate-700/80 bg-slate-900/85 p-1.5 shadow-xl backdrop-blur-md">
+    <div
+      className={`fixed top-3 right-3 z-20 flex items-center gap-1.5 rounded-2xl border p-1.5 ${ui.panel}`}
+    >
       {settings.mode === 'collect' && (
-        <div className="flex items-center gap-1.5 rounded-xl bg-slate-800/90 px-2.5 py-1.5 text-xs font-semibold text-amber-300">
+        <div
+          className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold ${
+            isLight
+              ? 'bg-amber-900/10 text-amber-800'
+              : 'bg-slate-800/90 text-amber-300'
+          }`}
+        >
           <CircleDot className="h-3.5 w-3.5" />
           <span className="font-mono">
             {round.run.collected.size}/{round.board.targets.length}
@@ -43,11 +62,7 @@ export function FocusToolbar({
         size="h-9 w-9"
         label={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
         title={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
-        tone={`transition ${
-          settings.marbleMode
-            ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50'
-            : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-        }`}
+        tone={`transition ${settings.marbleMode ? activeSky : ui.pillIdle}`}
         onClick={() => {
           if (!settings.marbleMode) unlockAudio();
           dispatch({
@@ -59,9 +74,25 @@ export function FocusToolbar({
         <Disc className="h-4 w-4" />
       </IconButton>
 
+      <IconButton
+        size="h-9 w-9"
+        label={settings.fogOfWar ? 'Vypnout mlhu' : 'Zapnout mlhu se svítilnou'}
+        title={settings.fogOfWar ? 'Vypnout mlhu' : 'Zapnout mlhu se svítilnou'}
+        tone={`transition ${settings.fogOfWar ? activeAmber : ui.pillIdle}`}
+        onClick={() =>
+          dispatch({
+            type: 'configure',
+            patch: { fogOfWar: !settings.fogOfWar },
+          })
+        }
+      >
+        <Flashlight className="h-4 w-4" />
+      </IconButton>
+
       <SoundButton
         size="h-9 w-9"
         enabled={settings.sound}
+        theme={theme}
         dispatch={dispatch}
       />
 
@@ -69,11 +100,7 @@ export function FocusToolbar({
         size="h-9 w-9"
         label="Nápověda"
         title="Nápověda"
-        tone={`transition ${
-          showHint
-            ? 'bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/50'
-            : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-        }`}
+        tone={`transition ${showHint ? activeAmber : ui.pillIdle}`}
         onClick={() => dispatch({ type: 'toggleHint' })}
       >
         <Lightbulb className="h-4 w-4" />
@@ -102,11 +129,7 @@ export function FocusToolbar({
               ? 'Ukončit celou obrazovku prohlížeče'
               : 'Skrýt lišty prohlížeče'
           }
-          tone={`transition ${
-            browserFullscreen
-              ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50'
-              : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-          }`}
+          tone={`transition ${browserFullscreen ? activeSky : ui.pillIdle}`}
           onClick={onToggleBrowserFullscreen}
         >
           {browserFullscreen ? (

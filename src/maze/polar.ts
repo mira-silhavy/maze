@@ -117,13 +117,13 @@ export function generatePolarMaze(
   }
 
   const passages = new Set<string>();
-  const startId = polarCellId(0, 0);
+  const centerId = polarCellId(0, 0);
 
   if (algorithm === 'prim') {
-    const visited = new Set<string>([startId]);
+    const visited = new Set<string>([centerId]);
     const frontier: Array<[string, string]> = [];
-    for (const n of cells.get(startId)!.neighbors) {
-      frontier.push([startId, n]);
+    for (const n of cells.get(centerId)!.neighbors) {
+      frontier.push([centerId, n]);
     }
 
     while (frontier.length > 0) {
@@ -178,8 +178,8 @@ export function generatePolarMaze(
       }
     }
   } else {
-    const visited = new Set<string>([startId]);
-    const stack: string[] = [startId];
+    const visited = new Set<string>([centerId]);
+    const stack: string[] = [centerId];
 
     while (stack.length > 0) {
       const currentId = stack[stack.length - 1];
@@ -202,7 +202,7 @@ export function generatePolarMaze(
     const openCount = (cell: PolarCell): number =>
       cell.neighbors.filter((n) => passages.has(polarEdgeKey(cell.id, n))).length;
     const deadEnds = cellList.filter(
-      (cell) => cell.id !== startId && openCount(cell) === 1,
+      (cell) => cell.id !== centerId && openCount(cell) === 1,
     );
     for (let i = deadEnds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -225,19 +225,20 @@ export function generatePolarMaze(
     }
   }
 
-  // Pick the farthest outer-ring cell from center as the classic end
-  const distances = computePolarDistances(cells, passages, startId);
-  let endId = polarCellId(rings - 1, 0);
+  // Pick the farthest outer-ring cell from center as start, and center as goal
+  const distances = computePolarDistances(cells, passages, centerId);
+  let startId = polarCellId(rings - 1, 0);
   let maxDist = -1;
   for (const cell of cellList) {
     if (cell.ring === rings - 1) {
       const d = distances.get(cell.id) ?? 0;
       if (d > maxDist) {
         maxDist = d;
-        endId = cell.id;
+        startId = cell.id;
       }
     }
   }
+  const endId = centerId;
 
   return {
     rings,

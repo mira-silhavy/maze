@@ -347,14 +347,27 @@ export function setMarbleRollingSpeed(speedNormalized: number): void {
 
 export function stopMarbleRollingSound(): void {
   if (!rollingNodes) return;
+  const nodes = rollingNodes;
+  rollingNodes = null;
   try {
     if (audioCtx) {
-      rollingNodes.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.02);
+      const now = audioCtx.currentTime;
+      nodes.gain.gain.setTargetAtTime(0.0001, now, 0.015);
+      nodes.source.onended = () => {
+        nodes.source.disconnect();
+        nodes.bandpass.disconnect();
+        nodes.lowpass.disconnect();
+        nodes.gain.disconnect();
+      };
+      nodes.source.stop(now + 0.08);
+    } else {
+      nodes.source.stop();
+      nodes.source.disconnect();
+      nodes.bandpass.disconnect();
+      nodes.lowpass.disconnect();
+      nodes.gain.disconnect();
     }
-    rollingNodes.source.stop();
-    rollingNodes.source.disconnect();
   } catch {
     // Ignore if already stopped
   }
-  rollingNodes = null;
 }

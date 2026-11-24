@@ -1,24 +1,26 @@
 import { useMemo } from 'react';
+import type { Vec3 } from '../game/marble';
 import {
   hasPolarPassage,
   polarCellId,
   type PolarCell,
   type PolarMaze,
 } from '../maze/polar';
-import type { MazeTheme } from '../maze/themes';
 import type { GameMode } from '../maze/types';
-
 import {
   MarbleSvg,
   ThemedGoalSvg,
   ThemedPlayerSvg,
   ThemedTargetSvg,
-} from './themeArt';
+} from '../themes/art';
+import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from '../themes/catalog';
+import { ThemedWallPathSvg } from '../themes/scene';
 
-interface CircularMazeSvgProps {
+interface CircularMazeProps {
   maze: PolarMaze;
   playerId: string;
   visited: Set<string>;
+  explored: Set<string>;
   trail: string[];
   hintPath: string[];
   gameMode: GameMode;
@@ -26,6 +28,13 @@ interface CircularMazeSvgProps {
   collected: Set<string>;
   theme: MazeTheme;
   marbleMode?: boolean;
+  marblePos?: {
+    x: number;
+    y: number;
+    u?: Vec3;
+    v?: Vec3;
+  } | null;
+  fogOfWar?: boolean;
   fullScreen?: boolean;
 }
 
@@ -68,10 +77,11 @@ function sectorWedgePath(cell: PolarCell): string {
   ].join(' ');
 }
 
-export function CircularMazeSvg({
+export function CircularMaze({
   maze,
   playerId,
   visited,
+  explored,
   trail,
   hintPath,
   gameMode,
@@ -79,8 +89,10 @@ export function CircularMazeSvg({
   collected,
   theme,
   marbleMode = false,
+  marblePos = null,
+  fogOfWar = false,
   fullScreen = false,
-}: CircularMazeSvgProps) {
+}: CircularMazeProps) {
   const maxRadius = maze.rings * RING_STEP;
   const halfExtent = maxRadius + MARGIN;
   const viewBox = `${-halfExtent} ${-halfExtent} ${halfExtent * 2} ${halfExtent * 2}`;
@@ -111,8 +123,8 @@ export function CircularMazeSvg({
       }
 
       if (cell.ring === maze.rings - 1) {
-        const isClassicExit = gameMode === 'classic' && cell.id === maze.endId;
-        if (!isClassicExit) {
+        const isClassicEntry = gameMode === 'classic' && cell.id === maze.startId;
+        if (!isClassicEntry) {
           paths.push(
             arcPath(cell.rOuter * RING_STEP, cell.angleStart, cell.angleEnd),
           );
@@ -148,20 +160,103 @@ export function CircularMazeSvg({
   }, [hintPath, maze]);
 
   const playerCell = maze.cells.get(playerId)!;
+  const startCell = maze.cells.get(maze.startId)!;
   const endCell = maze.cells.get(maze.endId)!;
   const wallStroke = Math.max(2.2, Math.min(4, RING_STEP * 0.095));
+  const activeX =
+    marbleMode && marblePos
+      ? marblePos.x * RING_STEP
+      : playerCell.x * RING_STEP;
+  const activeY =
+    marbleMode && marblePos
+      ? marblePos.y * RING_STEP
+      : playerCell.y * RING_STEP;
+  const livePencilPathD = useMemo(() => {
+    if (!marbleMode || !marblePos || trail.length === 0) return pencilPathD;
+
+    const projectTowardOpenNeighbor = (
+      cur: PolarCell,
+      excludeId?: string,
+    ): { x: number; y: number } | null => {
+      const mx = marblePos.x - cur.x;
+      const my = marblePos.y - cur.y;
+      let best: { x: number; y: number } | null = null;
+      let bestScore = 0.02;
+      for (const nId of cur.neighbors) {
+        if (nId === excludeId || !hasPolarPassage(maze, cur.id, nId)) continue;
+        const n = maze.cells.get(nId);
+        if (!n) continue;
+        const vx = n.x - cur.x;
+        const vy = n.y - cur.y;
+        const lenSq = vx * vx + vy * vy;
+        if (lenSq < 1e-6) continue;
+        const u = Math.min(1, (mx * vx + my * vy) / lenSq);
+        if (u > bestScore) {
+          bestScore = u;
+          best = { x: cur.x + vx * u, y: cur.y + vy * u };
+        }
+      }
+      return best;
+    };
+
+    if (trail.length === 1) {
+      const cur = maze.cells.get(trail[0]);
+      if (!cur) return '';
+      const ext = projectTowardOpenNeighbor(cur);
+      if (!ext) return '';
+      return `M ${(cur.x * RING_STEP).toFixed(2)} ${(cur.y * RING_STEP).toFixed(2)} L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`;
+    }
+
+    const parts: string[] = [];
+    for (let i = 0; i < trail.length - 1; i++) {
+      const cell = maze.cells.get(trail[i])!;
+      parts.push(
+        `${i === 0 ? 'M' : 'L'} ${(cell.x * RING_STEP).toFixed(2)} ${(cell.y * RING_STEP).toFixed(2)}`,
+      );
+    }
+
+    const prev = maze.cells.get(trail[trail.length - 2])!;
+    const cur = maze.cells.get(trail[trail.length - 1])!;
+    const vx = cur.x - prev.x;
+    const vy = cur.y - prev.y;
+    const lenSq = vx * vx + vy * vy;
+    const t =
+      lenSq > 1e-6
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              ((marblePos.x - prev.x) * vx + (marblePos.y - prev.y) * vy) /
+                lenSq,
+            ),
+          )
+        : 1;
+    const tipX = (prev.x + vx * t) * RING_STEP;
+    const tipY = (prev.y + vy * t) * RING_STEP;
+    parts.push(`L ${tipX.toFixed(2)} ${tipY.toFixed(2)}`);
+
+    if (t >= 0.999) {
+      const ext = projectTowardOpenNeighbor(cur, prev.id);
+      if (ext) {
+        parts.push(
+          `L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`,
+        );
+      }
+    }
+
+    return parts.join(' ');
+  }, [marbleMode, marblePos, trail, pencilPathD, maze]);
 
   return (
     <div
       className={
         fullScreen
-          ? `flex h-full w-full items-center justify-center rounded-2xl border p-2 shadow-2xl ${theme.containerClass}`
-          : `flex aspect-square max-h-[68vh] w-full max-w-[620px] items-center justify-center rounded-2xl border p-2 shadow-2xl ${theme.containerClass}`
+          ? `flex h-full w-full items-center justify-center rounded-2xl border p-2 ${theme.containerClass}`
+          : `flex aspect-square max-h-[68vh] w-full max-w-[620px] items-center justify-center rounded-2xl border p-2 ${theme.containerClass}`
       }
     >
       <svg
         viewBox={viewBox}
-        style={{ backgroundColor: theme.background }}
         className="h-full w-full rounded-xl"
         role="img"
         aria-label="Kruhové bludiště"
@@ -174,10 +269,59 @@ export function CircularMazeSvg({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          {fogOfWar && (
+            <>
+              <radialGradient id="polar-fog-mem">
+                <stop offset="0%" stopColor="black" stopOpacity="0.56" />
+                <stop offset="100%" stopColor="black" stopOpacity="0" />
+              </radialGradient>
+              <radialGradient id="polar-fog-light">
+                <stop offset="0%" stopColor="black" stopOpacity="1" />
+                <stop offset="64%" stopColor="black" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="black" stopOpacity="0" />
+              </radialGradient>
+              <radialGradient id="polar-fog-tint">
+                <stop offset="0%" stopColor={theme.lightTint} />
+                <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+              </radialGradient>
+              <mask id="polar-fog-mask">
+                <rect
+                  x={-halfExtent}
+                  y={-halfExtent}
+                  width={halfExtent * 2}
+                  height={halfExtent * 2}
+                  fill="white"
+                />
+                {maze.cellList.map((cell) =>
+                  explored.has(cell.id) ? (
+                    <circle
+                      key={`f-${cell.id}`}
+                      cx={cell.x * RING_STEP}
+                      cy={cell.y * RING_STEP}
+                      r={RING_STEP * 1.65}
+                      fill="url(#polar-fog-mem)"
+                    />
+                  ) : null,
+                )}
+                <circle
+                  cx={activeX}
+                  cy={activeY}
+                  r={RING_STEP * 2.8}
+                  fill="url(#polar-fog-light)"
+                />
+              </mask>
+            </>
+          )}
         </defs>
 
         {/* Circular floor */}
-        <circle cx="0" cy="0" r={maxRadius} fill={theme.corridorFloor} />
+        <circle
+          cx="0"
+          cy="0"
+          r={maxRadius}
+          fill={theme.corridorFloor}
+          fillOpacity={CORRIDOR_FLOOR_OPACITY}
+        />
 
         {/* Visited cells */}
         {maze.cellList.map((cell) =>
@@ -191,9 +335,9 @@ export function CircularMazeSvg({
         )}
 
         {/* Continuous pencil line */}
-        {pencilPathD && (
+        {livePencilPathD && (
           <path
-            d={pencilPathD}
+            d={livePencilPathD}
             fill="none"
             stroke={theme.pencilLine}
             strokeWidth="6.5"
@@ -217,14 +361,24 @@ export function CircularMazeSvg({
           />
         )}
 
-        {/* Start marker at center */}
+        {/* Start marker */}
         {gameMode === 'collect' ? (
-          <g stroke={theme.startCross} strokeWidth="4.5" strokeLinecap="round">
+          <g
+            transform={`translate(${(startCell.x * RING_STEP).toFixed(2)} ${(startCell.y * RING_STEP).toFixed(2)})`}
+            stroke={theme.startCross}
+            strokeWidth="4.5"
+            strokeLinecap="round"
+          >
             <line x1="-8" y1="-8" x2="8" y2="8" />
             <line x1="8" y1="-8" x2="-8" y2="8" />
           </g>
         ) : (
-          <circle cx="0" cy="0" r="8" fill={theme.startHighlight} />
+          <circle
+            cx={startCell.x * RING_STEP}
+            cy={startCell.y * RING_STEP}
+            r="8"
+            fill={theme.startHighlight}
+          />
         )}
 
         {/* Goal(s) */}
@@ -259,26 +413,24 @@ export function CircularMazeSvg({
         )}
 
         {/* Polar walls */}
-        <path
+        <ThemedWallPathSvg
           d={wallsPathD}
-          fill="none"
-          stroke={theme.wall}
-          strokeWidth={wallStroke}
-          strokeLinecap="round"
+          wallWidth={wallStroke}
+          theme={theme}
+          glowFilterId="polar-glow"
         />
 
         {/* Player */}
-        <g
-          filter={theme.isLight ? undefined : 'url(#polar-glow)'}
-          style={{ transition: 'transform 110ms ease-out' }}
-        >
+        <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
           {marbleMode ? (
             <MarbleSvg
-              x={playerCell.x * RING_STEP}
-              y={playerCell.y * RING_STEP}
+              x={activeX}
+              y={activeY}
               r={9.5}
               theme={theme}
               idPrefix="polar"
+              u={marblePos?.u}
+              v={marblePos?.v}
             />
           ) : (
             <ThemedPlayerSvg
@@ -289,6 +441,26 @@ export function CircularMazeSvg({
             />
           )}
         </g>
+
+        {/* Fog of War + Flashlight */}
+        {fogOfWar && (
+          <>
+            <rect
+              x={-halfExtent}
+              y={-halfExtent}
+              width={halfExtent * 2}
+              height={halfExtent * 2}
+              fill={theme.fogColor}
+              mask="url(#polar-fog-mask)"
+            />
+            <circle
+              cx={activeX}
+              cy={activeY}
+              r={RING_STEP * 2.8}
+              fill="url(#polar-fog-tint)"
+            />
+          </>
+        )}
       </svg>
     </div>
   );

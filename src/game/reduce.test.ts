@@ -65,7 +65,12 @@ function corridor(
     round: {
       kind: 'grid',
       board: { maze: corridorMaze, targets, optimalSteps: 3 },
-      run: { trail: [corridorMaze.start], collected: new Set(), steps: 0 },
+      run: {
+        trail: [corridorMaze.start],
+        explored: new Set(['0,0']),
+        collected: new Set(),
+        steps: 0,
+      },
     },
     showHint: false,
     elapsedSeconds: 0,
@@ -122,7 +127,12 @@ describe('move', () => {
       round: {
         kind: 'grid',
         board: { maze, targets: [], optimalSteps: 2 },
-        run: { trail: [maze.start], collected: new Set(), steps: 0 },
+        run: {
+          trail: [maze.start],
+          explored: new Set(['0,0']),
+          collected: new Set(),
+          steps: 0,
+        },
       },
     };
     expect(player(run(s, { type: 'move', dx: 1, dy: 0.5 }))).toEqual({
@@ -134,7 +144,7 @@ describe('move', () => {
     ]);
   });
 
-  it('backtracking with erase on pops the trail and still counts a step', () => {
+  it('backtracking pops the trail and still counts a step', () => {
     const s = run(corridor(), right, right, left);
     expect(trail(s)).toEqual([
       { row: 0, col: 0 },
@@ -143,12 +153,10 @@ describe('move', () => {
     expect(s.round.run.steps).toBe(3);
   });
 
-  it('backtracking with erase off appends to the trail', () => {
-    const s = run(corridor({ eraseBacktrack: false }), right, right, left);
+  it('backtracking still pops the trail when showTrail is off', () => {
+    const s = run(corridor({ showTrail: false }), right, right, left);
     expect(trail(s)).toEqual([
       { row: 0, col: 0 },
-      { row: 0, col: 1 },
-      { row: 0, col: 2 },
       { row: 0, col: 1 },
     ]);
   });
@@ -219,7 +227,12 @@ describe('move', () => {
       round: {
         kind: 'polar',
         board: { maze, targets: [], optimalSteps: 0 },
-        run: { trail: [maze.startId], collected: new Set(), steps: 0 },
+        run: {
+          trail: [maze.startId],
+          explored: new Set([maze.startId]),
+          collected: new Set(),
+          steps: 0,
+        },
       },
     };
     const [from, to] = polarGeometry.pathToNearest(maze, maze.startId, [
@@ -283,7 +296,12 @@ describe('bridges', () => {
       round: {
         kind: 'grid',
         board: { maze, targets: [], optimalSteps: 4 },
-        run: { trail: [maze.start], collected: new Set(), steps: 0 },
+        run: {
+          trail: [maze.start],
+          explored: new Set(['0,0']),
+          collected: new Set(),
+          steps: 0,
+        },
       },
     };
   }
@@ -361,6 +379,7 @@ describe('lifecycle', () => {
     expect(r.round.board).toBe(s.round.board);
     expect(r.round.run).toEqual({
       trail: [{ row: 0, col: 0 }],
+      explored: new Set(['0,0']),
       collected: new Set(),
       steps: 0,
     });
@@ -382,17 +401,27 @@ describe('lifecycle', () => {
     expect(r.showHint).toBe(true);
   });
 
-  it('theme, sound and erase changes keep the round', () => {
+  it('theme, sound, showTrail and fogOfWar changes keep the round', () => {
     const s = run(corridor(), right);
     for (const patch of [
       { themeId: 'forest' },
       { sound: false },
-      { eraseBacktrack: false },
+      { showTrail: false },
+      { fogOfWar: true },
     ] as const) {
       const r = reduce(s, { type: 'configure', patch }).state;
       expect(r.round).toBe(s.round);
       expect(r.settings).toEqual({ ...s.settings, ...patch });
     }
+  });
+
+  it('explored memory persists even when backtracking pops the trail', () => {
+    const s = run(corridor({ showTrail: true }), right, right, left);
+    expect(trail(s)).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+    ]);
+    expect([...s.round.run.explored].sort()).toEqual(['0,0', '0,1', '0,2']);
   });
 
   it('a new maze resets the hint and the run', () => {

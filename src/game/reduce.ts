@@ -152,7 +152,13 @@ function resetRun(round: Round, targetCount?: TargetCount): Round {
 }
 
 function freshRun<M, N>(geo: Geometry<M, N>, board: Board<M, N>): Run<N> {
-  return { trail: [geo.start(board.maze)], collected: new Set(), steps: 0 };
+  const start = geo.start(board.maze);
+  return {
+    trail: [start],
+    explored: new Set([geo.key(start)]),
+    collected: new Set(),
+    steps: 0,
+  };
 }
 
 function advance<M, N>(
@@ -169,7 +175,6 @@ function advance<M, N>(
 
   const toKey = geo.key(to);
   const backtracking =
-    settings.eraseBacktrack &&
     run.trail.length >= 2 &&
     geo.key(run.trail[run.trail.length - 2]) === toKey;
   const trail: [N, ...N[]] = backtracking
@@ -182,7 +187,11 @@ function advance<M, N>(
     board.targets.some((t) => geo.key(t) === toKey);
   const collected = picksUp ? new Set(run.collected).add(toKey) : run.collected;
 
-  const nextRun: Run<N> = { trail, collected, steps: run.steps + 1 };
+  const explored = run.explored.has(toKey)
+    ? run.explored
+    : new Set(run.explored).add(toKey);
+
+  const nextRun: Run<N> = { trail, explored, collected, steps: run.steps + 1 };
   const events: GameEvent[] = [{ type: 'step' }];
   if (picksUp) events.push({ type: 'collect', collectedCount: collected.size });
   if (isWon(geo, board, nextRun, settings.mode)) events.push({ type: 'win' });

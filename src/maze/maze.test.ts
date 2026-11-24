@@ -5,7 +5,7 @@ import {
   generateMaze,
   gridStep,
   positionKey,
-} from './generator';
+} from './grid';
 import {
   findPolarShortestPath,
   generatePolarMaze,

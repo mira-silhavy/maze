@@ -1,7 +1,7 @@
 import { RefreshCw, Trophy } from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
-import { getThemeById } from '../maze/themes';
+import { getThemeById } from '../themes/catalog';
 import { formatTime } from './formatTime';
 
 export function WinOverlay({

@@ -1,4 +1,4 @@
-import { gridStep, positionKey } from './generator';
+import { gridStep, positionKey } from './grid';
 import type { Direction, Maze, Position } from './types';
 
 const ALL_DIRECTIONS: readonly Direction[] = ['top', 'right', 'bottom', 'left'];

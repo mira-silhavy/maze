@@ -1,4 +1,5 @@
-import { gridStep } from '../maze/generator';
+import { gridStep } from '../maze/grid';
+import { hasPolarPassage, polarCellId, type PolarMaze } from '../maze/polar';
 import type { Direction, Level, Maze, Position } from '../maze/types';
 import type { TiltVector } from './tilt';
 
@@ -231,6 +232,212 @@ export function stepMarblePhysics(
   const finalSpeed = Math.hypot(vx, vy);
   return {
     body: { x, y, vx, vy, row, col, level, u, v, squash, squashAxis },
+    enteredCells,
+    bumpIntensity: maxBump,
+    speedNormalized: Math.min(1, finalSpeed / (MAX_SPEED * 0.85)),
+  };
+}
+
+export interface PolarMarbleBody {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  cellId: string;
+  u: Vec3;
+  v: Vec3;
+}
+
+export interface PolarMarbleStepResult {
+  body: PolarMarbleBody;
+  enteredCells: Array<{ dx: number; dy: number }>;
+  bumpIntensity: number;
+  speedNormalized: number;
+}
+
+const TWO_PI = Math.PI * 2;
+
+function wrapAngle(a: number): number {
+  let r = (a + Math.PI) % TWO_PI;
+  if (r < 0) r += TWO_PI;
+  return r - Math.PI;
+}
+
+function polarCellAt(maze: PolarMaze, x: number, y: number): string {
+  const dist = Math.hypot(x, y);
+  const ring = Math.min(maze.rings - 1, Math.floor(dist));
+  if (ring <= 0) return polarCellId(0, 0);
+  const count = maze.ringCounts[ring];
+  const rel = (((Math.atan2(y, x) + Math.PI / 2) % TWO_PI) + TWO_PI) % TWO_PI;
+  const sector = Math.min(count - 1, Math.floor((rel / TWO_PI) * count));
+  return polarCellId(ring, sector);
+}
+
+export function createPolarMarbleAt(
+  maze: PolarMaze,
+  cellId: string,
+): PolarMarbleBody {
+  const cell = maze.cells.get(cellId);
+  return {
+    x: cell?.x ?? 0,
+    y: cell?.y ?? 0,
+    vx: 0,
+    vy: 0,
+    cellId,
+    u: [1, 0, 0],
+    v: [0, 1, 0],
+  };
+}
+
+export function stepPolarMarblePhysics(
+  maze: PolarMaze,
+  prev: PolarMarbleBody,
+  tilt: TiltVector,
+  dtSec: number,
+): PolarMarbleStepResult {
+  const clampedDt = Math.min(0.05, Math.max(0, dtSec));
+  const subDt = clampedDt / SUBSTEPS;
+
+  let { x, y, vx, vy, cellId, u, v } = prev;
+  const enteredCells: Array<{ dx: number; dy: number }> = [];
+  let maxBump = 0;
+
+  const resolvePointCollision = (cx: number, cy: number) => {
+    const dx = x - cx;
+    const dy = y - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 0 && dist < MARBLE_RADIUS) {
+      const nx = dx / dist;
+      const ny = dy / dist;
+      x = cx + nx * MARBLE_RADIUS;
+      y = cy + ny * MARBLE_RADIUS;
+      const vn = vx * nx + vy * ny;
+      if (vn < 0) {
+        if (vn < -0.6) {
+          maxBump = Math.max(maxBump, Math.min(1, -vn / MAX_SPEED));
+        }
+        vx -= (1 + BOUNCE) * vn * nx;
+        vy -= (1 + BOUNCE) * vn * ny;
+      }
+    }
+  };
+
+  const collideArc = (radius: number, angleStart: number, angleEnd: number) => {
+    const mid = (angleStart + angleEnd) * 0.5;
+    const halfSpan = (angleEnd - angleStart) * 0.5;
+    const theta = Math.atan2(y, x);
+    const diff = wrapAngle(theta - mid);
+    const clampedAngle = mid + Math.max(-halfSpan, Math.min(halfSpan, diff));
+    resolvePointCollision(
+      Math.cos(clampedAngle) * radius,
+      Math.sin(clampedAngle) * radius,
+    );
+  };
+
+  const collideSegment = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+  ) => {
+    const sx = x2 - x1;
+    const sy = y2 - y1;
+    const lenSq = sx * sx + sy * sy;
+    if (lenSq <= 0) return;
+    const t = Math.max(0, Math.min(1, ((x - x1) * sx + (y - y1) * sy) / lenSq));
+    resolvePointCollision(x1 + sx * t, y1 + sy * t);
+  };
+
+  for (let s = 0; s < SUBSTEPS; s++) {
+    const startX = x;
+    const startY = y;
+
+    vx += tilt.gx * ACCEL * subDt;
+    vy += tilt.gy * ACCEL * subDt;
+
+    const damping = Math.exp(-FRICTION * subDt);
+    vx *= damping;
+    vy *= damping;
+
+    const speed = Math.hypot(vx, vy);
+    if (speed > MAX_SPEED) {
+      const scale = MAX_SPEED / speed;
+      vx *= scale;
+      vy *= scale;
+    }
+
+    x += vx * subDt;
+    y += vy * subDt;
+
+    const distFromCenter = Math.hypot(x, y);
+    const minRing = Math.max(1, Math.floor(distFromCenter) - 1);
+    const maxRing = Math.min(maze.rings - 1, Math.floor(distFromCenter) + 1);
+
+    for (let ring = minRing; ring <= maxRing; ring++) {
+      const count = maze.ringCounts[ring];
+      const innerCount = maze.ringCounts[ring - 1];
+      const ratio = count / innerCount;
+
+      for (let sector = 0; sector < count; sector++) {
+        const cell = maze.cells.get(polarCellId(ring, sector));
+        if (!cell) continue;
+
+        // Inner circular arc wall
+        const innerId = polarCellId(ring - 1, Math.floor(sector / ratio));
+        if (!hasPolarPassage(maze, cell.id, innerId)) {
+          collideArc(cell.rInner, cell.angleStart, cell.angleEnd);
+        }
+
+        // Clockwise radial wall
+        const cwId = polarCellId(ring, (sector + 1) % count);
+        if (!hasPolarPassage(maze, cell.id, cwId)) {
+          const cosA = Math.cos(cell.angleEnd);
+          const sinA = Math.sin(cell.angleEnd);
+          collideSegment(
+            cosA * cell.rInner,
+            sinA * cell.rInner,
+            cosA * cell.rOuter,
+            sinA * cell.rOuter,
+          );
+        }
+
+        // Outer rim boundary
+        if (ring === maze.rings - 1) {
+          collideArc(cell.rOuter, cell.angleStart, cell.angleEnd);
+        }
+      }
+    }
+
+    // Roll the 3D sphere basis based on actual distance traveled
+    const stepDx = x - startX;
+    const stepDy = y - startY;
+    const stepDist = Math.hypot(stepDx, stepDy);
+    if (stepDist > 1e-5) {
+      const axisX = -stepDy / stepDist;
+      const axisY = stepDx / stepDist;
+      const angle = stepDist / MARBLE_RADIUS;
+      u = normalizeVec3(rotateVec3(u, axisX, axisY, angle));
+      v = normalizeVec3(rotateVec3(v, axisX, axisY, angle));
+    }
+
+    // Track cell transitions along valid open passages
+    const nextId = polarCellAt(maze, x, y);
+    if (nextId !== cellId && hasPolarPassage(maze, cellId, nextId)) {
+      const prevCell = maze.cells.get(cellId);
+      const nextCell = maze.cells.get(nextId);
+      if (prevCell && nextCell) {
+        enteredCells.push({
+          dx: nextCell.x - prevCell.x,
+          dy: nextCell.y - prevCell.y,
+        });
+        cellId = nextId;
+      }
+    }
+  }
+
+  const finalSpeed = Math.hypot(vx, vy);
+  return {
+    body: { x, y, vx, vy, cellId, u, v },
     enteredCells,
     bumpIntensity: maxBump,
     speedNormalized: Math.min(1, finalSpeed / (MAX_SPEED * 0.85)),

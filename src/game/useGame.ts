@@ -4,14 +4,10 @@ import {
   playStepSound,
   playWallBumpSound,
   playWinSound,
-} from '../maze/sound';
-import {
-  DEFAULT_SETTINGS,
-  type Command,
-  type GameEvent,
-  type GameState,
-} from './model';
+} from '../audio/sound';
+import { type Command, type GameEvent, type GameState } from './model';
 import { initGame, phase, reduce } from './reduce';
+import { loadSettings, saveSettings } from './storage';
 
 export type Dispatch = (command: Command) => void;
 
@@ -21,8 +17,12 @@ export type Dispatch = (command: Command) => void;
  * several moves before React re-renders, so each command reads the ref.
  */
 export function useGame(): { state: GameState; dispatch: Dispatch } {
-  const [state, setState] = useState(() => initGame(DEFAULT_SETTINGS));
+  const [state, setState] = useState(() => initGame(loadSettings()));
   const ref = useRef(state);
+
+  useEffect(() => {
+    saveSettings(state.settings);
+  }, [state.settings]);
 
   const dispatch = useCallback<Dispatch>((command) => {
     const { state: next, events } = reduce(ref.current, command);

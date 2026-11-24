@@ -4,7 +4,7 @@ import {
   bridgeNeighbors,
   corridorLinks,
   positionKey,
-} from '../maze/generator';
+} from '../maze/grid';
 import { hasPolarPassage, polarCellId } from '../maze/polar';
 import type { Cell, Position } from '../maze/types';
 
@@ -58,7 +58,7 @@ function arcPath(radius: number, startAngle: number, endAngle: number): string {
   return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
 }
 
-export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
+export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
   const { style: mazeStyle, mode: gameMode } = settings;
   const gridMaze = round.kind === 'grid' ? round.board.maze : null;
   const gridTargets = round.kind === 'grid' ? round.board.targets : [];
@@ -120,9 +120,9 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
         );
       }
       if (cell.ring === polarMaze.rings - 1) {
-        const isClassicExit =
-          gameMode === 'classic' && cell.id === polarMaze.endId;
-        if (!isClassicExit) {
+        const isClassicEntry =
+          gameMode === 'classic' && cell.id === polarMaze.startId;
+        if (!isClassicEntry) {
           paths.push(
             arcPath(cell.rOuter * RING_STEP, cell.angleStart, cell.angleEnd),
           );
@@ -322,10 +322,20 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
             />
             {gameMode === 'collect' ? (
               <>
-                <g stroke="#000000" strokeWidth="3.5" strokeLinecap="round">
-                  <line x1="-8" y1="-8" x2="8" y2="8" />
-                  <line x1="8" y1="-8" x2="-8" y2="8" />
-                </g>
+                {(() => {
+                  const startCell = polarMaze.cells.get(polarMaze.startId)!;
+                  return (
+                    <g
+                      transform={`translate(${(startCell.x * RING_STEP).toFixed(2)} ${(startCell.y * RING_STEP).toFixed(2)})`}
+                      stroke="#000000"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                    >
+                      <line x1="-8" y1="-8" x2="8" y2="8" />
+                      <line x1="8" y1="-8" x2="-8" y2="8" />
+                    </g>
+                  );
+                })()}
                 {polarTargets.map((id) => {
                   const cell = polarMaze.cells.get(id);
                   if (!cell) return null;
@@ -344,29 +354,32 @@ export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
               </>
             ) : (
               <>
-                <text
-                  x="0"
-                  y="6"
-                  textAnchor="middle"
-                  fontSize="16"
-                  fontWeight="700"
-                  fill="#000000"
-                >
-                  S
-                </text>
                 {(() => {
+                  const startCell = polarMaze.cells.get(polarMaze.startId)!;
                   const endCell = polarMaze.cells.get(polarMaze.endId)!;
                   return (
-                    <text
-                      x={endCell.x * RING_STEP}
-                      y={endCell.y * RING_STEP + 6}
-                      textAnchor="middle"
-                      fontSize="16"
-                      fontWeight="700"
-                      fill="#000000"
-                    >
-                      C
-                    </text>
+                    <>
+                      <text
+                        x={startCell.x * RING_STEP}
+                        y={startCell.y * RING_STEP + 6}
+                        textAnchor="middle"
+                        fontSize="16"
+                        fontWeight="700"
+                        fill="#000000"
+                      >
+                        S
+                      </text>
+                      <text
+                        x={endCell.x * RING_STEP}
+                        y={endCell.y * RING_STEP + 6}
+                        textAnchor="middle"
+                        fontSize="16"
+                        fontWeight="700"
+                        fill="#000000"
+                      >
+                        C
+                      </text>
+                    </>
                   );
                 })()}
               </>

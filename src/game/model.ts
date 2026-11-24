@@ -1,5 +1,5 @@
 import type { PolarMaze } from '../maze/polar';
-import type { ThemeId } from '../maze/themes';
+import type { ThemeId } from '../themes/catalog';
 import type {
   AspectRatioId,
   GameMode,
@@ -21,9 +21,10 @@ export interface Settings {
   themeId: ThemeId;
   targetCount: TargetCount;
   sound: boolean;
-  eraseBacktrack: boolean;
+  showTrail: boolean;
   bridges: boolean;
   marbleMode: boolean;
+  fogOfWar: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -36,9 +37,10 @@ export const DEFAULT_SETTINGS: Settings = {
   themeId: 'space',
   targetCount: 7,
   sound: true,
-  eraseBacktrack: true,
+  showTrail: true,
   bridges: false,
   marbleMode: false,
+  fogOfWar: false,
 };
 
 export type SettingEffect = 'regenerate' | 'retarget' | 'none';
@@ -57,9 +59,10 @@ export const SETTING_EFFECT: Record<keyof Settings, SettingEffect> = {
   targetCount: 'retarget',
   themeId: 'none',
   sound: 'none',
-  eraseBacktrack: 'none',
+  showTrail: 'none',
   bridges: 'regenerate',
   marbleMode: 'none',
+  fogOfWar: 'none',
 };
 
 export interface Board<M, N> {
@@ -70,6 +73,7 @@ export interface Board<M, N> {
 
 export interface Run<N> {
   trail: [N, ...N[]];
+  explored: Set<string>;
   collected: Set<string>;
   steps: number;
 }

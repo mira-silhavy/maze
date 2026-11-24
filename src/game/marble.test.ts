@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { curvedPointFromGrid } from '../components/CurvedMazeSvg';
-import { generateMaze } from '../maze/generator';
+import { curvedPointFromGrid } from '../renderers/CurvedMaze';
+import { generateMaze } from '../maze/grid';
+import { generatePolarMaze, hasPolarPassage } from '../maze/polar';
 import type { Maze } from '../maze/types';
-import { createMarbleAt, MARBLE_RADIUS, stepMarblePhysics } from './marble';
+import {
+  createMarbleAt,
+  createPolarMarbleAt,
+  MARBLE_RADIUS,
+  stepMarblePhysics,
+  stepPolarMarblePhysics,
+} from './marble';
 
 function buildBridgeCrossMaze(): Maze {
   const maze = generateMaze(3, 3);
@@ -107,5 +114,60 @@ describe('marble physics', () => {
       expect(Math.hypot(cur.x - prev.x, cur.y - prev.y)).toBeLessThan(1);
       prev = cur;
     }
+  });
+
+  it('rolls smoothly through open polar passages and stops at closed polar arcs', () => {
+    const maze = generatePolarMaze(4);
+    const centerId = maze.endId;
+    const centerCell = maze.cells.get(centerId)!;
+    const openNeighborId = centerCell.neighbors.find((n) =>
+      hasPolarPassage(maze, centerId, n),
+    )!;
+    const closedNeighborId = centerCell.neighbors.find(
+      (n) => !hasPolarPassage(maze, centerId, n),
+    )!;
+    const openNeighbor = maze.cells.get(openNeighborId)!;
+    const closedNeighbor = maze.cells.get(closedNeighborId)!;
+
+    // 1. Tilt toward a closed arc wall from center -> stays in ring 0 and bumps
+    let body = createPolarMarbleAt(maze, centerId);
+    const cLen = Math.hypot(closedNeighbor.x, closedNeighbor.y);
+    let bumped = false;
+    for (let i = 0; i < 45; i++) {
+      const res = stepPolarMarblePhysics(
+        maze,
+        body,
+        { gx: closedNeighbor.x / cLen, gy: closedNeighbor.y / cLen },
+        0.016,
+      );
+      body = res.body;
+      if (res.bumpIntensity > 0) bumped = true;
+    }
+    expect(body.cellId).toBe(centerId);
+    expect(Math.hypot(body.x, body.y)).toBeLessThanOrEqual(
+      1 - MARBLE_RADIUS + 0.02,
+    );
+    expect(bumped).toBe(true);
+
+    // 2. Tilt toward the open neighbor -> rolls continuously into ring 1 and spins
+    body = createPolarMarbleAt(maze, centerId);
+    const oLen = Math.hypot(openNeighbor.x, openNeighbor.y);
+    const entered: Array<{ dx: number; dy: number }> = [];
+    for (let i = 0; i < 60; i++) {
+      const res = stepPolarMarblePhysics(
+        maze,
+        body,
+        { gx: openNeighbor.x / oLen, gy: openNeighbor.y / oLen },
+        0.016,
+      );
+      body = res.body;
+      entered.push(...res.enteredCells);
+    }
+    expect(entered.length).toBeGreaterThanOrEqual(1);
+    expect(body.cellId).not.toBe(centerId);
+    // Verify 3D orientation basis actually rotated while rolling (check both u and v)
+    const uDelta = Math.hypot(body.u[0] - 1, body.u[1], body.u[2]);
+    const vDelta = Math.hypot(body.v[0], body.v[1] - 1, body.v[2]);
+    expect(Math.max(uDelta, vDelta)).toBeGreaterThan(0.1);
   });
 });

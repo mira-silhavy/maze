@@ -69,15 +69,14 @@ export interface DifficultyPreset {
   label: string;
   baseSize: number;
   polarRings: number;
-  circleCount: number;
   bridgeCount: number;
 }
 
 export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
-  { id: 'small', label: 'Malé', baseSize: 11, polarRings: 5, circleCount: 5, bridgeCount: 3 },
-  { id: 'medium', label: 'Střední', baseSize: 19, polarRings: 7, circleCount: 7, bridgeCount: 5 },
-  { id: 'large', label: 'Velké', baseSize: 29, polarRings: 10, circleCount: 10, bridgeCount: 7 },
-  { id: 'huge', label: 'Obří', baseSize: 39, polarRings: 13, circleCount: 12, bridgeCount: 10 },
+  { id: 'small', label: 'Malé', baseSize: 11, polarRings: 5, bridgeCount: 3 },
+  { id: 'medium', label: 'Střední', baseSize: 19, polarRings: 7, bridgeCount: 5 },
+  { id: 'large', label: 'Velké', baseSize: 29, polarRings: 10, bridgeCount: 7 },
+  { id: 'huge', label: 'Obří', baseSize: 39, polarRings: 13, bridgeCount: 10 },
 ];
 
 export function getMazeDimensions(
