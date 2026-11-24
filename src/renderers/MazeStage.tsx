@@ -225,7 +225,7 @@ export function MazeStage({
           : `relative flex w-full touch-none select-none justify-center ${marbleMode ? '' : 'cursor-grab active:cursor-grabbing'}`
       }
     >
-      {marbleMode && !won && (
+      {marbleMode && !won && permission !== 'unsupported' && (
         <div
           onPointerDown={(e) => e.stopPropagation()}
           className="fixed bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-200 shadow-xl backdrop-blur-md"
@@ -251,9 +251,7 @@ export function MazeStage({
               <span className="text-slate-300">
                 {hasGyro
                   ? 'Nakláněj tablet pro kutálení kuličky'
-                  : permission === 'unsupported'
-                    ? 'Ovládej kuličku šipkami / WASD'
-                    : 'Nakláněj tablet (nebo drž šipky / WASD)'}
+                  : 'Nakláněj tablet (nebo drž šipky / WASD)'}
               </span>
               {hasGyro && (
                 <button
