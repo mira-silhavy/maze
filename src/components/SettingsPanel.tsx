@@ -229,16 +229,16 @@ export function SettingsPanel({
               {MAZE_STYLES[style].label}
             </OptionPill>
           ))}
-          {MAZE_STYLES[settings.style].supportsBridges && (
-            <OptionPill
-              active={settings.bridges}
-              activeClass="bg-violet-500/20 text-violet-300 ring-1 ring-violet-400/50"
-              Icon={Layers}
-              onClick={() => configure({ bridges: !settings.bridges })}
-            >
-              Mosty
-            </OptionPill>
-          )}
+          <OptionPill
+            active={settings.bridges}
+            activeClass="bg-violet-500/20 text-violet-300 ring-1 ring-violet-400/50"
+            Icon={Layers}
+            disabled={!MAZE_STYLES[settings.style].supportsBridges}
+            title="Mosty jsou jen v hranatých a křivkových bludištích"
+            onClick={() => configure({ bridges: !settings.bridges })}
+          >
+            Mosty
+          </OptionPill>
         </div>
       </div>
 

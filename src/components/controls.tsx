@@ -7,22 +7,31 @@ export function OptionPill({
   activeClass,
   onClick,
   Icon,
+  disabled,
+  title,
   children,
 }: {
   active: boolean;
   activeClass: string;
   onClick: () => void;
   Icon?: LucideIcon;
+  disabled?: boolean;
+  title?: string;
   children: ReactNode;
 }) {
+  const cursor = disabled ? 'cursor-not-allowed' : 'cursor-pointer';
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`${Icon ? 'inline-flex cursor-pointer items-center gap-1.5' : 'cursor-pointer'} rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
-        active
-          ? activeClass
-          : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
+      disabled={disabled}
+      title={title}
+      className={`${Icon ? `inline-flex ${cursor} items-center gap-1.5` : cursor} rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
+        disabled
+          ? 'bg-slate-800/40 text-slate-600'
+          : active
+            ? activeClass
+            : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
       }`}
     >
       {Icon && <Icon className="h-3.5 w-3.5" />}
