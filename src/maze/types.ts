@@ -29,6 +29,26 @@ export type GameMode = 'classic' | 'collect';
 
 export type MazeStyle = 'classic' | 'curved' | 'circular';
 
+export type MazeAlgorithm = 'backtracker' | 'prim' | 'kruskal';
+
+export interface MazeAlgorithmPreset {
+  id: MazeAlgorithm;
+  label: string;
+}
+
+export const MAZE_ALGORITHMS: readonly MazeAlgorithmPreset[] = [
+  { id: 'backtracker', label: 'Klikaté' },
+  { id: 'prim', label: 'Větvené' },
+  { id: 'kruskal', label: 'Rovnoměrné' },
+];
+
+export interface MazeGenerateOptions {
+  bridges?: boolean;
+  bridgeCount?: number;
+  algorithm?: MazeAlgorithm;
+  braided?: boolean;
+}
+
 export type AspectRatioId = 'square' | 'tablet' | 'widescreen';
 
 export interface AspectRatioPreset {
@@ -50,13 +70,14 @@ export interface DifficultyPreset {
   baseSize: number;
   polarRings: number;
   circleCount: number;
+  bridgeCount: number;
 }
 
 export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
-  { id: 'small', label: 'Malé', baseSize: 11, polarRings: 5, circleCount: 5 },
-  { id: 'medium', label: 'Střední', baseSize: 19, polarRings: 7, circleCount: 7 },
-  { id: 'large', label: 'Velké', baseSize: 29, polarRings: 10, circleCount: 10 },
-  { id: 'huge', label: 'Obří', baseSize: 39, polarRings: 13, circleCount: 12 },
+  { id: 'small', label: 'Malé', baseSize: 11, polarRings: 5, circleCount: 5, bridgeCount: 3 },
+  { id: 'medium', label: 'Střední', baseSize: 19, polarRings: 7, circleCount: 7, bridgeCount: 5 },
+  { id: 'large', label: 'Velké', baseSize: 29, polarRings: 10, circleCount: 10, bridgeCount: 7 },
+  { id: 'huge', label: 'Obří', baseSize: 39, polarRings: 13, circleCount: 12, bridgeCount: 10 },
 ];
 
 export function getMazeDimensions(

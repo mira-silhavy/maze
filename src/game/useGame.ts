@@ -30,7 +30,7 @@ export function useGame(): { state: GameState; dispatch: Dispatch } {
       ref.current = next;
       setState(next);
     }
-    if (next.settings.sound) playSoundFor(events);
+    if (next.settings.sound) playSoundFor(events, next.settings.marbleMode);
   }, []);
 
   const playing = phase(state) === 'playing';
@@ -43,12 +43,12 @@ export function useGame(): { state: GameState; dispatch: Dispatch } {
   return { state, dispatch };
 }
 
-function playSoundFor(events: GameEvent[]): void {
+function playSoundFor(events: GameEvent[], marbleMode: boolean): void {
   const collect = events.find(
     (e): e is Extract<GameEvent, { type: 'collect' }> => e.type === 'collect',
   );
   if (events.some((e) => e.type === 'win')) playWinSound();
   else if (collect) playCollectSound(collect.collectedCount);
-  else if (events.some((e) => e.type === 'step')) playStepSound();
-  else if (events.some((e) => e.type === 'bump')) playWallBumpSound();
+  else if (!marbleMode && events.some((e) => e.type === 'step')) playStepSound();
+  else if (!marbleMode && events.some((e) => e.type === 'bump')) playWallBumpSound();
 }

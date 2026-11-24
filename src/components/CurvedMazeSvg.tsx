@@ -14,6 +14,13 @@ import type {
   Position,
 } from '../maze/types';
 
+import {
+  MarbleSvg,
+  ThemedGoalSvg,
+  ThemedPlayerSvg,
+  ThemedTargetSvg,
+} from './themeArt';
+
 interface CurvedMazeSvgProps {
   maze: Maze;
   player: Position;
@@ -24,6 +31,8 @@ interface CurvedMazeSvgProps {
   targets: Position[];
   collected: Set<string>;
   theme: MazeTheme;
+  marbleMode?: boolean;
+  marblePos?: { x: number; y: number; level?: 'over' | 'under' } | null;
   fullScreen?: boolean;
 }
 
@@ -85,6 +94,8 @@ export function CurvedMazeSvg({
   targets,
   collected,
   theme,
+  marbleMode = false,
+  marblePos = null,
   fullScreen = false,
 }: CurvedMazeSvgProps) {
   const viewWidth = maze.cols * CELL_UNIT + PADDING * 2;
@@ -120,12 +131,42 @@ export function CurvedMazeSvg({
 
   const startPos = nodeCenter(maze.start);
   const endPos = nodeCenter(maze.end);
-  const playerPos = nodeCenter(player);
-  const playerMarker = (
-    <>
-      <circle cx={playerPos.x} cy={playerPos.y} r="9.5" fill={theme.playerFill} />
-      <circle cx={playerPos.x} cy={playerPos.y} r="4" fill={theme.playerCore} />
-    </>
+  const playerPos = useMemo(() => {
+    if (marbleMode && marblePos) {
+      // Smoothly map cell-space (col+0.5, row+0.5) into curved SVG coordinates
+      const baseRow = Math.min(maze.rows - 1, Math.max(0, Math.floor(marblePos.y)));
+      const baseCol = Math.min(maze.cols - 1, Math.max(0, Math.floor(marblePos.x)));
+      const center = nodeCenter({ row: baseRow, col: baseCol });
+      const offsetCol = marblePos.x - (baseCol + 0.5);
+      const offsetRow = marblePos.y - (baseRow + 0.5);
+      return {
+        x: center.x + offsetCol * CELL_UNIT,
+        y: center.y + offsetRow * CELL_UNIT,
+      };
+    }
+    return nodeCenter(player);
+  }, [marbleMode, marblePos, player, maze.rows, maze.cols]);
+
+  const effectiveLevel = marbleMode && marblePos ? marblePos.level : player.level;
+  const effectiveRow =
+    marbleMode && marblePos
+      ? Math.min(maze.rows - 1, Math.max(0, Math.floor(marblePos.y)))
+      : player.row;
+  const effectiveCol =
+    marbleMode && marblePos
+      ? Math.min(maze.cols - 1, Math.max(0, Math.floor(marblePos.x)))
+      : player.col;
+
+  const playerMarker = marbleMode ? (
+    <MarbleSvg
+      x={playerPos.x}
+      y={playerPos.y}
+      r={10.5}
+      theme={theme}
+      idPrefix="curved"
+    />
+  ) : (
+    <ThemedPlayerSvg x={playerPos.x} y={playerPos.y} r={10.5} theme={theme} />
   );
   const pathD = (points: Position[]) =>
     points
@@ -221,9 +262,9 @@ export function CurvedMazeSvg({
         {bridges.map((cell) => {
           const { deck, planks } = bridgePaths(cell);
           const isUnder =
-            player.level === 'under' &&
-            player.row === cell.row &&
-            player.col === cell.col;
+            effectiveLevel === 'under' &&
+            effectiveRow === cell.row &&
+            effectiveCol === cell.col;
           return (
             <g
               key={positionKey(cell)}
@@ -298,47 +339,30 @@ export function CurvedMazeSvg({
 
         {/* Goal(s) */}
         {gameMode === 'classic' ? (
-          <rect
-            x={endPos.x - 9}
-            y={endPos.y - 9}
-            width="18"
-            height="18"
-            rx="5"
-            fill={theme.goalFill}
-            filter={theme.isLight ? undefined : 'url(#curved-glow)'}
-          />
+          <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
+            <ThemedGoalSvg x={endPos.x} y={endPos.y} r={9.5} theme={theme} />
+          </g>
         ) : (
           targets.map((target) => {
             const key = positionKey(target);
             const isCollected = collected.has(key);
             const pt = nodeCenter(target);
-            return isCollected ? (
-              <circle
+            return (
+              <ThemedTargetSvg
                 key={key}
-                cx={pt.x}
-                cy={pt.y}
-                r="7"
-                fill="none"
-                stroke={theme.targetCollected}
-                strokeWidth="3"
-              />
-            ) : (
-              <circle
-                key={key}
-                cx={pt.x}
-                cy={pt.y}
-                r="9.5"
-                fill={theme.targetFill}
-                stroke={theme.targetStroke}
-                strokeWidth="4"
-                filter={theme.isLight ? undefined : 'url(#curved-glow)'}
+                x={pt.x}
+                y={pt.y}
+                r={9.5}
+                theme={theme}
+                collected={isCollected}
+                glowFilter={theme.isLight ? undefined : 'url(#curved-glow)'}
               />
             );
           })
         )}
 
         {/* Player */}
-        {player.level !== 'under' && (
+        {effectiveLevel !== 'under' && (
           <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
             {playerMarker}
           </g>

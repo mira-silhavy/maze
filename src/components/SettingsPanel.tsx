@@ -1,9 +1,12 @@
 import {
   CircleDot,
   Compass,
+  Disc,
   Eraser,
   FileText,
   Flag,
+  GitBranch,
+  Infinity as InfinityIcon,
   Layers,
   Lightbulb,
   Maximize2,
@@ -25,6 +28,7 @@ import {
   ASPECT_RATIO_PRESETS,
   DIFFICULTY_PRESETS,
   getMazeDimensions,
+  MAZE_ALGORITHMS,
   type AspectRatioId,
   type GameMode,
   type MazeStyle,
@@ -214,6 +218,15 @@ export function SettingsPanel({
               {item.label}
             </OptionPill>
           ))}
+          <OptionPill
+            active={settings.marbleMode}
+            activeClass="bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50"
+            Icon={Disc}
+            title="Kutálení kuličky nakláněním tabletu (na PC drž šipky / WASD)"
+            onClick={() => configure({ marbleMode: !settings.marbleMode })}
+          >
+            Kulička
+          </OptionPill>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -234,15 +247,39 @@ export function SettingsPanel({
             activeClass="bg-violet-500/20 text-violet-300 ring-1 ring-violet-400/50"
             Icon={Layers}
             disabled={!MAZE_STYLES[settings.style].supportsBridges}
-            title="Mosty jsou jen v hranatých a křivkových bludištích"
+            title="Mosty (nad/pod) — počet roste s velikostí bludiště"
             onClick={() => configure({ bridges: !settings.bridges })}
           >
             Mosty
+          </OptionPill>
+          <OptionPill
+            active={settings.braided}
+            activeClass="bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/50"
+            Icon={InfinityIcon}
+            title="Propojí část slepých uliček do smyček (více možných cest)"
+            onClick={() => configure({ braided: !settings.braided })}
+          >
+            Smyčky
           </OptionPill>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 pt-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-400">Generátor:</span>
+          {MAZE_ALGORITHMS.map((algo) => (
+            <OptionPill
+              key={algo.id}
+              active={settings.algorithm === algo.id}
+              activeClass="bg-teal-500 text-slate-950 shadow-sm shadow-teal-500/40"
+              Icon={GitBranch}
+              onClick={() => configure({ algorithm: algo.id })}
+            >
+              {algo.label}
+            </OptionPill>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-slate-400">Motiv:</span>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -259,48 +296,53 @@ export function SettingsPanel({
             ))}
           </div>
         </div>
-
-        {MAZE_STYLES[settings.style].usesAspectRatio && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-slate-400">
-              Poměr stran:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {ASPECT_RATIO_PRESETS.map((item) => (
-                <OptionPill
-                  key={item.id}
-                  active={item.id === settings.aspectRatioId}
-                  activeClass="bg-indigo-500 text-white shadow-sm shadow-indigo-500/40"
-                  Icon={ASPECT_ICONS[item.id]}
-                  onClick={() => configure({ aspectRatioId: item.id })}
-                >
-                  {item.label} ({item.ratioText})
-                </OptionPill>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {settings.mode === 'collect' && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-slate-400">
-              Počet koleček:
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {TARGET_COUNT_OPTIONS.map((item) => (
-                <OptionPill
-                  key={String(item.value)}
-                  active={item.value === settings.targetCount}
-                  activeClass="bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/40"
-                  onClick={() => configure({ targetCount: item.value })}
-                >
-                  {item.label}
-                </OptionPill>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      {(MAZE_STYLES[settings.style].usesAspectRatio ||
+        settings.mode === 'collect') && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 pt-2.5">
+          {MAZE_STYLES[settings.style].usesAspectRatio && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-400">
+                Poměr stran:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {ASPECT_RATIO_PRESETS.map((item) => (
+                  <OptionPill
+                    key={item.id}
+                    active={item.id === settings.aspectRatioId}
+                    activeClass="bg-indigo-500 text-white shadow-sm shadow-indigo-500/40"
+                    Icon={ASPECT_ICONS[item.id]}
+                    onClick={() => configure({ aspectRatioId: item.id })}
+                  >
+                    {item.label} ({item.ratioText})
+                  </OptionPill>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {settings.mode === 'collect' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-400">
+                Počet cílů:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {TARGET_COUNT_OPTIONS.map((item) => (
+                  <OptionPill
+                    key={String(item.value)}
+                    active={item.value === settings.targetCount}
+                    activeClass="bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/40"
+                    onClick={() => configure({ targetCount: item.value })}
+                  >
+                    {item.label}
+                  </OptionPill>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

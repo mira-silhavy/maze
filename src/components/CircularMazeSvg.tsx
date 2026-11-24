@@ -8,6 +8,13 @@ import {
 import type { MazeTheme } from '../maze/themes';
 import type { GameMode } from '../maze/types';
 
+import {
+  MarbleSvg,
+  ThemedGoalSvg,
+  ThemedPlayerSvg,
+  ThemedTargetSvg,
+} from './themeArt';
+
 interface CircularMazeSvgProps {
   maze: PolarMaze;
   playerId: string;
@@ -18,6 +25,7 @@ interface CircularMazeSvgProps {
   targets: string[];
   collected: Set<string>;
   theme: MazeTheme;
+  marbleMode?: boolean;
   fullScreen?: boolean;
 }
 
@@ -70,6 +78,7 @@ export function CircularMazeSvg({
   targets,
   collected,
   theme,
+  marbleMode = false,
   fullScreen = false,
 }: CircularMazeSvgProps) {
   const maxRadius = maze.rings * RING_STEP;
@@ -221,13 +230,11 @@ export function CircularMazeSvg({
         {/* Goal(s) */}
         {gameMode === 'classic' ? (
           <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
-            <rect
-              x={endCell.x * RING_STEP - 8}
-              y={endCell.y * RING_STEP - 8}
-              width="16"
-              height="16"
-              rx="4"
-              fill={theme.goalFill}
+            <ThemedGoalSvg
+              x={endCell.x * RING_STEP}
+              y={endCell.y * RING_STEP}
+              r={9}
+              theme={theme}
             />
           </g>
         ) : (
@@ -237,26 +244,15 @@ export function CircularMazeSvg({
             const isCollected = collected.has(targetId);
             const cx = cell.x * RING_STEP;
             const cy = cell.y * RING_STEP;
-            return isCollected ? (
-              <circle
+            return (
+              <ThemedTargetSvg
                 key={targetId}
-                cx={cx}
-                cy={cy}
-                r="6.5"
-                fill="none"
-                stroke={theme.targetCollected}
-                strokeWidth="3"
-              />
-            ) : (
-              <circle
-                key={targetId}
-                cx={cx}
-                cy={cy}
-                r="8.5"
-                fill={theme.targetFill}
-                stroke={theme.targetStroke}
-                strokeWidth="3.8"
-                filter={theme.isLight ? undefined : 'url(#polar-glow)'}
+                x={cx}
+                y={cy}
+                r={8.5}
+                theme={theme}
+                collected={isCollected}
+                glowFilter={theme.isLight ? undefined : 'url(#polar-glow)'}
               />
             );
           })
@@ -272,19 +268,26 @@ export function CircularMazeSvg({
         />
 
         {/* Player */}
-        <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
-          <circle
-            cx={playerCell.x * RING_STEP}
-            cy={playerCell.y * RING_STEP}
-            r="9"
-            fill={theme.playerFill}
-          />
-          <circle
-            cx={playerCell.x * RING_STEP}
-            cy={playerCell.y * RING_STEP}
-            r="3.8"
-            fill={theme.playerCore}
-          />
+        <g
+          filter={theme.isLight ? undefined : 'url(#polar-glow)'}
+          style={{ transition: 'transform 110ms ease-out' }}
+        >
+          {marbleMode ? (
+            <MarbleSvg
+              x={playerCell.x * RING_STEP}
+              y={playerCell.y * RING_STEP}
+              r={9.5}
+              theme={theme}
+              idPrefix="polar"
+            />
+          ) : (
+            <ThemedPlayerSvg
+              x={playerCell.x * RING_STEP}
+              y={playerCell.y * RING_STEP}
+              r={9.5}
+              theme={theme}
+            />
+          )}
         </g>
       </svg>
     </div>

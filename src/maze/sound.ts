@@ -1,5 +1,73 @@
 let audioCtx: AudioContext | null = null;
 let noiseBuffer: AudioBuffer | null = null;
+let outputBus: AudioNode | null = null;
+
+/** Shared bus: dry + small-room reverb into a gentle compressor. */
+function getOutput(ctx: AudioContext): AudioNode {
+  if (outputBus && outputBus.context === ctx) return outputBus;
+
+  const input = ctx.createGain();
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.ratio.value = 3;
+  compressor.attack.value = 0.004;
+  compressor.release.value = 0.2;
+  compressor.connect(ctx.destination);
+
+  const length = Math.floor(ctx.sampleRate * 1.3);
+  const ir = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = ir.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3.5);
+    }
+  }
+  const reverb = ctx.createConvolver();
+  reverb.buffer = ir;
+  const damp = ctx.createBiquadFilter();
+  damp.type = 'lowpass';
+  damp.frequency.value = 3800;
+  const wet = ctx.createGain();
+  wet.gain.value = 0.22;
+
+  input.connect(compressor);
+  input.connect(reverb);
+  reverb.connect(damp);
+  damp.connect(wet);
+  wet.connect(compressor);
+
+  outputBus = input;
+  return input;
+}
+
+function panned(ctx: AudioContext, pan: number): AudioNode {
+  const panner = ctx.createStereoPanner();
+  panner.pan.value = pan;
+  panner.connect(getOutput(ctx));
+  return panner;
+}
+
+/** Fixed-pitch sine partial with an exponential decay (no pitch sweep). */
+function playPartial(
+  ctx: AudioContext,
+  dest: AudioNode,
+  freq: number,
+  startTime: number,
+  decaySec: number,
+  amp: number,
+  attackSec = 0.004,
+): void {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.frequency.setValueAtTime(freq, startTime);
+  gain.gain.setValueAtTime(0.0001, startTime);
+  gain.gain.linearRampToValueAtTime(amp, startTime + attackSec);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + decaySec);
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(startTime);
+  osc.stop(startTime + decaySec + 0.02);
+}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -39,6 +107,7 @@ function playFilteredNoise(
   q: number,
   volume: number,
   filterType: BiquadFilterType = 'bandpass',
+  dest: AudioNode = getOutput(ctx),
 ): void {
   const src = ctx.createBufferSource();
   src.buffer = getNoiseBuffer(ctx);
@@ -55,15 +124,15 @@ function playFilteredNoise(
 
   src.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(dest);
 
-  src.start(startTime);
+  src.start(startTime, Math.random() * 0.1);
   src.stop(startTime + durationSec + 0.01);
 }
 
 /**
- * Acoustic kalimba / marimba-like plucked note with natural harmonic decay
- * and a soft mallet transient.
+ * Marimba / kalimba-like struck bar: inharmonic overtones that die fast,
+ * a slightly detuned second fundamental for natural beating, soft mallet.
  */
 function playAcousticPluck(
   ctx: AudioContext,
@@ -71,75 +140,45 @@ function playAcousticPluck(
   startTime: number,
   durationSec: number,
   volume: number,
+  pan = 0,
 ): void {
   const master = ctx.createGain();
   master.gain.setValueAtTime(volume, startTime);
 
   const warmth = ctx.createBiquadFilter();
   warmth.type = 'lowpass';
-  warmth.frequency.setValueAtTime(Math.min(4200, freq * 5), startTime);
+  warmth.frequency.setValueAtTime(Math.min(6000, freq * 6), startTime);
   warmth.frequency.exponentialRampToValueAtTime(
-    Math.max(400, freq * 1.4),
+    Math.max(500, freq * 1.5),
     startTime + durationSec,
   );
 
+  const out = panned(ctx, pan);
   master.connect(warmth);
-  warmth.connect(ctx.destination);
+  warmth.connect(out);
 
-  // Fundamental + natural woody overtones that decay faster than fundamental
-  const partials: ReadonlyArray<{ ratio: number; amp: number; decay: number }> = [
-    { ratio: 1, amp: 1.0, decay: durationSec },
-    { ratio: 2, amp: 0.28, decay: durationSec * 0.45 },
-    { ratio: 3.98, amp: 0.1, decay: durationSec * 0.2 },
-  ];
+  const detune = 1 + (Math.random() * 0.004 + 0.002);
+  playPartial(ctx, master, freq, startTime, durationSec, 0.75);
+  playPartial(ctx, master, freq * detune, startTime, durationSec * 0.9, 0.3);
+  // Tuned-bar overtone ratios (~4x and ~10x), decaying much faster
+  playPartial(ctx, master, freq * 3.93, startTime, durationSec * 0.18, 0.16, 0.002);
+  playPartial(ctx, master, freq * 9.7, startTime, durationSec * 0.06, 0.05, 0.001);
 
-  for (const p of partials) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq * p.ratio, startTime);
-
-    gain.gain.setValueAtTime(0.0001, startTime);
-    gain.gain.linearRampToValueAtTime(p.amp, startTime + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + p.decay);
-
-    osc.connect(gain);
-    gain.connect(master);
-
-    osc.start(startTime);
-    osc.stop(startTime + p.decay + 0.02);
-  }
-
-  // Soft mallet click
-  playFilteredNoise(ctx, startTime, 0.014, freq * 2.5, 1.4, volume * 0.22);
+  // Soft felt mallet
+  playFilteredNoise(ctx, startTime, 0.018, freq * 2, 0.9, volume * 0.25, 'lowpass', out);
 }
 
-/** Soft paper/pencil brush + subtle woody tap with slight natural pitch variation. */
+/** Soft footstep-like shuffle: brushed noise with a faint low body. */
 export function playStepSound(): void {
   const ctx = getAudioContext();
   if (!ctx) return;
 
   const now = ctx.currentTime;
-  const jitter = 0.92 + Math.random() * 0.16;
+  const jitter = 0.9 + Math.random() * 0.2;
+  const out = panned(ctx, (Math.random() - 0.5) * 0.3);
 
-  // Soft paper/pencil stroke
-  playFilteredNoise(ctx, now, 0.028, 1100 * jitter, 1.2, 0.055, 'bandpass');
-
-  // Subtle damped low body
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(185 * jitter, now);
-  osc.frequency.exponentialRampToValueAtTime(110 * jitter, now + 0.025);
-
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.032, now + 0.003);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.035);
+  playFilteredNoise(ctx, now, 0.045, 1400 * jitter, 0.7, 0.05, 'bandpass', out);
+  playFilteredNoise(ctx, now, 0.035, 260 * jitter, 0.8, 0.07, 'lowpass', out);
 }
 
 /** Muted wooden knock when bumping into a wall. */
@@ -149,23 +188,12 @@ export function playWallBumpSound(): void {
 
   const now = ctx.currentTime;
   const jitter = 0.94 + Math.random() * 0.12;
+  const out = getOutput(ctx);
 
-  playFilteredNoise(ctx, now, 0.035, 340 * jitter, 1.6, 0.08, 'lowpass');
-
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(145 * jitter, now);
-  osc.frequency.exponentialRampToValueAtTime(72 * jitter, now + 0.055);
-
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(0.085, now + 0.004);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.07);
+  playFilteredNoise(ctx, now, 0.05, 420 * jitter, 1.2, 0.12, 'lowpass', out);
+  // Wooden body resonances (inharmonic, fixed pitch)
+  playPartial(ctx, out, 118 * jitter, now, 0.09, 0.07, 0.002);
+  playPartial(ctx, out, 118 * 2.6 * jitter, now, 0.045, 0.035, 0.001);
 }
 
 const COLLECT_PENTATONIC = [
@@ -189,8 +217,9 @@ export function playCollectSound(collectedCount: number): void {
     Math.max(0, (collectedCount - 1) % COLLECT_PENTATONIC.length),
   );
   const note = COLLECT_PENTATONIC[idx];
-  playAcousticPluck(ctx, note, now, 0.34, 0.14);
-  playAcousticPluck(ctx, note * 1.5, now + 0.055, 0.26, 0.065);
+  const pan = (idx / (COLLECT_PENTATONIC.length - 1) - 0.5) * 0.6;
+  playAcousticPluck(ctx, note, now, 0.6, 0.16, pan);
+  playAcousticPluck(ctx, note * 1.5, now + 0.06, 0.45, 0.07, -pan);
 }
 
 /** Warm acoustic harp / kalimba victory chord arpeggio. */
@@ -205,9 +234,123 @@ export function playWinSound(): void {
     playAcousticPluck(
       ctx,
       freq,
-      now + i * 0.085,
-      isLast ? 0.75 : 0.42,
-      isLast ? 0.15 : 0.11,
+      now + i * 0.09,
+      isLast ? 1.4 : 0.8,
+      isLast ? 0.16 : 0.12,
+      (i / (chord.length - 1) - 0.5) * 0.8,
     );
   });
+}
+
+let lastMarbleBumpAt = 0;
+
+/** Crisp glassy/wooden marble clack scaled by impact intensity (0..1). */
+export function playMarbleBumpSound(intensity = 0.7): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const nowMs = performance.now();
+  if (nowMs - lastMarbleBumpAt < 90) return;
+  lastMarbleBumpAt = nowMs;
+
+  const clamped = Math.max(0.15, Math.min(1, intensity));
+  const now = ctx.currentTime;
+  const jitter = 0.94 + Math.random() * 0.12;
+
+  const out = getOutput(ctx);
+  playFilteredNoise(ctx, now, 0.02, 3200 * jitter, 1.5, 0.08 * clamped, 'bandpass', out);
+  // Glass-like inharmonic ring
+  const base = 2100 * jitter;
+  playPartial(ctx, out, base, now, 0.07, 0.05 * clamped, 0.001);
+  playPartial(ctx, out, base * 2.76, now, 0.035, 0.025 * clamped, 0.001);
+  playPartial(ctx, out, 260 * jitter, now, 0.04, 0.05 * clamped, 0.001);
+}
+
+let rollingNodes: {
+  source: AudioBufferSourceNode;
+  bandpass: BiquadFilterNode;
+  lowpass: BiquadFilterNode;
+  gain: GainNode;
+} | null = null;
+
+function createRollingNoiseBuffer(ctx: AudioContext): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * 1.5);
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  // Pink-ish smoothed noise for a warm wooden-track marble rumble
+  let b0 = 0;
+  let b1 = 0;
+  let b2 = 0;
+  for (let i = 0; i < length; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.997 * b0 + white * 0.029;
+    b1 = 0.985 * b1 + white * 0.032;
+    b2 = 0.95 * b2 + white * 0.048;
+    data[i] = (b0 + b1 + b2 + white * 0.04) * 1.8;
+  }
+  return buffer;
+}
+
+/**
+ * Continuously updates a procedural marble-rolling rumble.
+ * Pass speedNormalized in [0, 1]; 0 silences it smoothly.
+ */
+export function setMarbleRollingSpeed(speedNormalized: number): void {
+  const clamped = Math.max(0, Math.min(1, speedNormalized));
+  if (clamped < 0.03) {
+    if (rollingNodes && audioCtx) {
+      rollingNodes.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.04);
+    }
+    return;
+  }
+
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  if (!rollingNodes) {
+    const source = ctx.createBufferSource();
+    source.buffer = createRollingNoiseBuffer(ctx);
+    source.loop = true;
+
+    const bandpass = ctx.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = 320;
+    bandpass.Q.value = 1.6;
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 1100;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+
+    source.connect(bandpass);
+    bandpass.connect(lowpass);
+    lowpass.connect(gain);
+    gain.connect(getOutput(ctx));
+    source.start();
+
+    rollingNodes = { source, bandpass, lowpass, gain };
+  }
+
+  const now = ctx.currentTime;
+  const targetFreq = 210 + clamped * 560;
+  const targetGain = 0.015 + clamped * 0.095;
+  rollingNodes.bandpass.frequency.setTargetAtTime(targetFreq, now, 0.05);
+  rollingNodes.lowpass.frequency.setTargetAtTime(650 + clamped * 1100, now, 0.05);
+  rollingNodes.gain.gain.setTargetAtTime(targetGain, now, 0.045);
+}
+
+export function stopMarbleRollingSound(): void {
+  if (!rollingNodes) return;
+  try {
+    if (audioCtx) {
+      rollingNodes.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.02);
+    }
+    rollingNodes.source.stop();
+    rollingNodes.source.disconnect();
+  } catch {
+    // Ignore if already stopped
+  }
+  rollingNodes = null;
 }

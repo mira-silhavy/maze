@@ -16,6 +16,7 @@ import {
   type DifficultyPreset,
   type Direction,
   type Maze,
+  type MazeGenerateOptions,
   type Position,
 } from '../maze/types';
 import type { Round, RoundOf, Vector } from './model';
@@ -24,7 +25,7 @@ export interface Geometry<M, N> {
   create(
     difficulty: DifficultyPreset,
     aspect: AspectRatioPreset,
-    bridges: boolean,
+    options: MazeGenerateOptions,
   ): M;
   start(maze: M): N;
   end(maze: M): N;
@@ -35,9 +36,12 @@ export interface Geometry<M, N> {
 }
 
 export const gridGeometry: Geometry<Maze, Position> = {
-  create: (difficulty, aspect, bridges) => {
+  create: (difficulty, aspect, options) => {
     const { rows, cols } = getMazeDimensions(difficulty, aspect);
-    return generateMaze(rows, cols, { bridges });
+    return generateMaze(rows, cols, {
+      ...options,
+      bridgeCount: difficulty.bridgeCount,
+    });
   },
   start: (maze) => maze.start,
   end: (maze) => maze.end,
@@ -65,7 +69,11 @@ export const gridGeometry: Geometry<Maze, Position> = {
 };
 
 export const polarGeometry: Geometry<PolarMaze, string> = {
-  create: (difficulty) => generatePolarMaze(difficulty.polarRings),
+  create: (difficulty, _aspect, options) =>
+    generatePolarMaze(difficulty.polarRings, {
+      algorithm: options.algorithm,
+      braided: options.braided,
+    }),
   start: (maze) => maze.startId,
   end: (maze) => maze.endId,
   key: (id) => id,

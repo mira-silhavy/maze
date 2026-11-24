@@ -1,6 +1,7 @@
 import { RefreshCw, Trophy } from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
+import { getThemeById } from '../maze/themes';
 import { formatTime } from './formatTime';
 
 export function WinOverlay({
@@ -11,6 +12,7 @@ export function WinOverlay({
   dispatch: Dispatch;
 }) {
   const { settings, round, elapsedSeconds } = state;
+  const theme = getThemeById(settings.themeId);
   const totalTargets = round.board.targets.length;
   return (
     <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/75 backdrop-blur-sm">
@@ -20,8 +22,8 @@ export function WinOverlay({
         </div>
         <h2 className="text-2xl font-bold text-white">
           {settings.mode === 'collect'
-            ? 'Všechna kolečka posbírána!'
-            : 'Bludiště vyřešeno!'}
+            ? theme.story.winCollectTitle
+            : theme.story.winClassicTitle}
         </h2>
         <p className="mt-2 text-sm text-slate-300">
           Čas:{' '}
@@ -31,7 +33,7 @@ export function WinOverlay({
           · Kroky: <strong className="text-white">{round.run.steps}</strong>
           {settings.mode === 'classic'
             ? ` (optimum ${round.board.optimalSteps})`
-            : ` · Kolečka: ${totalTargets}/${totalTargets}`}
+            : ` · ${theme.story.collectLabel}: ${totalTargets}/${totalTargets}`}
         </p>
         <button
           type="button"

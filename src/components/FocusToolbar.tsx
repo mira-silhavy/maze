@@ -1,4 +1,12 @@
-import { CircleDot, Lightbulb, Minimize2, RefreshCw } from 'lucide-react';
+import {
+  CircleDot,
+  Disc,
+  Lightbulb,
+  Maximize,
+  Minimize,
+  Minimize2,
+  RefreshCw,
+} from 'lucide-react';
 import type { GameState } from '../game/model';
 import type { Dispatch } from '../game/useGame';
 import { IconButton, SoundButton } from './controls';
@@ -7,10 +15,16 @@ export function FocusToolbar({
   state,
   dispatch,
   onExit,
+  browserFullscreen,
+  fullscreenSupported,
+  onToggleBrowserFullscreen,
 }: {
   state: GameState;
   dispatch: Dispatch;
   onExit: () => void;
+  browserFullscreen: boolean;
+  fullscreenSupported: boolean;
+  onToggleBrowserFullscreen: () => void;
 }) {
   const { settings, round, showHint } = state;
   return (
@@ -23,6 +37,25 @@ export function FocusToolbar({
           </span>
         </div>
       )}
+
+      <IconButton
+        size="h-9 w-9"
+        label={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
+        title={settings.marbleMode ? 'Vypnout kuličku' : 'Zapnout kuličku (náklon)'}
+        tone={`transition ${
+          settings.marbleMode
+            ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50'
+            : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+        }`}
+        onClick={() =>
+          dispatch({
+            type: 'configure',
+            patch: { marbleMode: !settings.marbleMode },
+          })
+        }
+      >
+        <Disc className="h-4 w-4" />
+      </IconButton>
 
       <SoundButton
         size="h-9 w-9"
@@ -53,6 +86,34 @@ export function FocusToolbar({
       >
         <RefreshCw className="h-4 w-4" />
       </IconButton>
+
+      {fullscreenSupported && (
+        <IconButton
+          size="h-9 w-9"
+          label={
+            browserFullscreen
+              ? 'Ukončit celou obrazovku prohlížeče'
+              : 'Skrýt lišty prohlížeče'
+          }
+          title={
+            browserFullscreen
+              ? 'Ukončit celou obrazovku prohlížeče'
+              : 'Skrýt lišty prohlížeče'
+          }
+          tone={`transition ${
+            browserFullscreen
+              ? 'bg-sky-500/20 text-sky-300 ring-1 ring-sky-400/50'
+              : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+          }`}
+          onClick={onToggleBrowserFullscreen}
+        >
+          {browserFullscreen ? (
+            <Minimize className="h-4 w-4" />
+          ) : (
+            <Maximize className="h-4 w-4" />
+          )}
+        </IconButton>
+      )}
 
       <button
         type="button"

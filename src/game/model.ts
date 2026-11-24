@@ -4,6 +4,7 @@ import type {
   AspectRatioId,
   GameMode,
   Maze,
+  MazeAlgorithm,
   MazeStyle,
   Position,
 } from '../maze/types';
@@ -15,11 +16,14 @@ export interface Settings {
   aspectRatioId: AspectRatioId;
   mode: GameMode;
   style: MazeStyle;
+  algorithm: MazeAlgorithm;
+  braided: boolean;
   themeId: ThemeId;
   targetCount: TargetCount;
   sound: boolean;
   eraseBacktrack: boolean;
   bridges: boolean;
+  marbleMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -27,11 +31,14 @@ export const DEFAULT_SETTINGS: Settings = {
   aspectRatioId: 'square',
   mode: 'classic',
   style: 'classic',
+  algorithm: 'backtracker',
+  braided: false,
   themeId: 'space',
   targetCount: 7,
   sound: true,
   eraseBacktrack: true,
   bridges: false,
+  marbleMode: false,
 };
 
 export type SettingEffect = 'regenerate' | 'retarget' | 'none';
@@ -45,11 +52,14 @@ export const SETTING_EFFECT: Record<keyof Settings, SettingEffect> = {
   aspectRatioId: 'regenerate',
   mode: 'regenerate',
   style: 'regenerate',
+  algorithm: 'regenerate',
+  braided: 'regenerate',
   targetCount: 'retarget',
   themeId: 'none',
   sound: 'none',
   eraseBacktrack: 'none',
   bridges: 'regenerate',
+  marbleMode: 'none',
 };
 
 export interface Board<M, N> {

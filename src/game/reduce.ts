@@ -123,9 +123,9 @@ function buildRound<M, N>(
   geo: Geometry<M, N>,
   difficulty: DifficultyPreset,
   aspect: AspectRatioPreset,
-  { targetCount, bridges }: Settings,
+  { targetCount, bridges, algorithm, braided }: Settings,
 ): RoundOf<M, N> {
-  const maze = geo.create(difficulty, aspect, bridges);
+  const maze = geo.create(difficulty, aspect, { bridges, algorithm, braided });
   const start = geo.start(maze);
   const board: Board<M, N> = {
     maze,

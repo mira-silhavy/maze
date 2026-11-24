@@ -293,4 +293,81 @@ describe('bridges', () => {
       findShortestPath(maze, { row: 0, col: 1 }, { row: 1, col: 2 }),
     ).toEqual([]);
   });
+
+  it('places controlled, well-spaced bridges scaling with difficulty across all algorithms', () => {
+    const algorithms = ['backtracker', 'prim', 'kruskal'] as const;
+    for (const algorithm of algorithms) {
+      for (const preset of DIFFICULTY_PRESETS) {
+        const maze = generateMaze(preset.baseSize, preset.baseSize, {
+          bridges: true,
+          bridgeCount: preset.bridgeCount,
+          algorithm,
+        });
+        const bridgeCells = maze.grid.flat().filter((c) => c.bridge);
+        expect(bridgeCells).toHaveLength(preset.bridgeCount);
+
+        for (let i = 0; i < bridgeCells.length; i++) {
+          for (let j = i + 1; j < bridgeCells.length; j++) {
+            const dist =
+              Math.abs(bridgeCells[i].row - bridgeCells[j].row) +
+              Math.abs(bridgeCells[i].col - bridgeCells[j].col);
+            expect(dist).toBeGreaterThanOrEqual(3);
+          }
+        }
+
+        const nodes = maze.grid.flat().flatMap(cellPositions);
+        const edges = new Set<string>();
+        const reached = new Set([positionKey(maze.start)]);
+        const queue = [maze.start];
+        while (queue.length > 0) {
+          const cur = queue.shift()!;
+          for (const dir of DIRS) {
+            const next = gridStep(maze, cur, dir);
+            if (!next) continue;
+            edges.add([positionKey(cur), positionKey(next)].sort().join('|'));
+            if (!reached.has(positionKey(next))) {
+              reached.add(positionKey(next));
+              queue.push(next);
+            }
+          }
+        }
+        expect(reached.size).toBe(nodes.length);
+        expect(edges.size).toBe(nodes.length - 1);
+      }
+    }
+  });
+
+  it('generates braided mazes with loops for both grid and polar mazes', () => {
+    const maze = generateMaze(19, 19, {
+      algorithm: 'prim',
+      bridges: true,
+      bridgeCount: 5,
+      braided: true,
+    });
+    const nodes = maze.grid.flat().flatMap(cellPositions);
+    const edges = new Set<string>();
+    const reached = new Set([positionKey(maze.start)]);
+    const queue = [maze.start];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const dir of DIRS) {
+        const next = gridStep(maze, cur, dir);
+        if (!next) continue;
+        edges.add([positionKey(cur), positionKey(next)].sort().join('|'));
+        if (!reached.has(positionKey(next))) {
+          reached.add(positionKey(next));
+          queue.push(next);
+        }
+      }
+    }
+    expect(reached.size).toBe(nodes.length);
+    expect(edges.size).toBeGreaterThan(nodes.length - 1);
+
+    for (const algorithm of ['backtracker', 'prim', 'kruskal'] as const) {
+      const polar = generatePolarMaze(6, { algorithm, braided: true });
+      const path = findPolarShortestPath(polar, polar.startId, [polar.endId]);
+      expect(path.length).toBeGreaterThan(1);
+      expect(polar.passages.size).toBeGreaterThan(polar.cellList.length - 1);
+    }
+  });
 });

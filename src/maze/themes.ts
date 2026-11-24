@@ -1,5 +1,21 @@
 export type ThemeId = 'space' | 'forest' | 'pirate' | 'paper';
 
+export interface ThemeStory {
+  classicSubtitle: string;
+  circularSubtitle: string;
+  collectSubtitle: string;
+  winClassicTitle: string;
+  winCollectTitle: string;
+  collectLabel: string;
+}
+
+export interface MarblePalette {
+  base: string;
+  mid: string;
+  highlight: string;
+  rim: string;
+}
+
 export interface MazeTheme {
   id: ThemeId;
   label: string;
@@ -21,6 +37,8 @@ export interface MazeTheme {
   targetCollected: string;
   hintStroke: string;
   containerClass: string;
+  story: ThemeStory;
+  marble: MarblePalette;
 }
 
 export const MAZE_THEMES: MazeTheme[] = [
@@ -45,6 +63,20 @@ export const MAZE_THEMES: MazeTheme[] = [
     targetCollected: 'rgba(52, 211, 153, 0.50)',
     hintStroke: '#fbbf24',
     containerClass: 'border-slate-800 bg-slate-900/80 shadow-slate-950/80',
+    story: {
+      classicSubtitle: 'Doveď raketu vesmírným bludištěm až k planetě!',
+      circularSubtitle: 'Vyleť s raketou ze středu galaxie až k planetě na okraji!',
+      collectSubtitle: 'Vyleť od křížku ✕ a posbírej všechny zářící hvězdy!',
+      winClassicTitle: 'Přistání na planetě!',
+      winCollectTitle: 'Všechny hvězdy posbírány!',
+      collectLabel: 'Hvězdy',
+    },
+    marble: {
+      base: '#0284c7',
+      mid: '#38bdf8',
+      highlight: '#f0f9ff',
+      rim: '#7dd3fc',
+    },
   },
   {
     id: 'forest',
@@ -67,6 +99,20 @@ export const MAZE_THEMES: MazeTheme[] = [
     targetCollected: 'rgba(134, 239, 172, 0.50)',
     hintStroke: '#fb923c',
     containerClass: 'border-emerald-900 bg-emerald-950/90 shadow-slate-950/80',
+    story: {
+      classicSubtitle: 'Pomoz lišce projít lesem až k útulné chatce!',
+      circularSubtitle: 'Proveď lišku ze středu lesa až k chatce na okraji!',
+      collectSubtitle: 'Vydej se od křížku ✕ a posbírej všechny lesní plody!',
+      winClassicTitle: 'Liška je v chatce!',
+      winCollectTitle: 'Všechny plody posbírány!',
+      collectLabel: 'Plody',
+    },
+    marble: {
+      base: '#c2410c',
+      mid: '#fb923c',
+      highlight: '#fff7ed',
+      rim: '#fdba74',
+    },
   },
   {
     id: 'pirate',
@@ -89,6 +135,20 @@ export const MAZE_THEMES: MazeTheme[] = [
     targetCollected: 'rgba(5, 150, 105, 0.45)',
     hintStroke: '#2563eb',
     containerClass: 'border-amber-700/60 bg-amber-100/95 shadow-slate-950/60',
+    story: {
+      classicSubtitle: 'Doveď pirátskou loď po mapě až k truhle s pokladem!',
+      circularSubtitle: 'Vypluj ze středu ostrova až k truhle s pokladem na okraji!',
+      collectSubtitle: 'Vypluj od křížku ✕ a posbírej všechny zlaté mince!',
+      winClassicTitle: 'Poklad nalezen!',
+      winCollectTitle: 'Všechny mince posbírány!',
+      collectLabel: 'Mince',
+    },
+    marble: {
+      base: '#b45309',
+      mid: '#f59e0b',
+      highlight: '#fef9c3',
+      rim: '#fcd34d',
+    },
   },
   {
     id: 'paper',
@@ -111,6 +171,20 @@ export const MAZE_THEMES: MazeTheme[] = [
     targetCollected: 'rgba(22, 163, 74, 0.45)',
     hintStroke: '#d97706',
     containerClass: 'border-slate-300 bg-white shadow-slate-950/50',
+    story: {
+      classicSubtitle: 'Najdi tužkou cestu z levého horního rohu do zeleného cíle.',
+      circularSubtitle: 'Dostaň se ze středu kruhového bludiště až k východu na okraji.',
+      collectSubtitle: 'Od křížku ✕ ke kolečkům ◯ — posbírej všechna kolečka!',
+      winClassicTitle: 'Bludiště vyřešeno!',
+      winCollectTitle: 'Všechna kolečka posbírána!',
+      collectLabel: 'Kolečka',
+    },
+    marble: {
+      base: '#1d4ed8',
+      mid: '#3b82f6',
+      highlight: '#eff6ff',
+      rim: '#93c5fd',
+    },
   },
 ];
 

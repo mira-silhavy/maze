@@ -1,9 +1,11 @@
 import { CircleDot, Clock, Footprints, Trophy } from 'lucide-react';
 import type { GameState } from '../game/model';
+import { getThemeById } from '../maze/themes';
 import { formatTime } from './formatTime';
 
 export function StatsRow({ state }: { state: GameState }) {
   const { settings, round, elapsedSeconds } = state;
+  const theme = getThemeById(settings.themeId);
   return (
     <section className="grid w-full max-w-[600px] grid-cols-3 gap-3">
       <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
@@ -25,7 +27,7 @@ export function StatsRow({ state }: { state: GameState }) {
       {settings.mode === 'collect' ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
           <CircleDot className="h-4 w-4 text-amber-400" />
-          <span className="text-xs text-slate-400">Kolečka</span>
+          <span className="text-xs text-slate-400">{theme.story.collectLabel}</span>
           <span className="font-mono text-sm font-semibold text-white">
             {round.run.collected.size} / {round.board.targets.length}
           </span>

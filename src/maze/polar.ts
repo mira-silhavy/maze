@@ -1,3 +1,5 @@
+import type { MazeAlgorithm } from './types';
+
 export interface PolarCell {
   id: string;
   ring: number;
@@ -38,7 +40,11 @@ export function hasPolarPassage(
   return maze.passages.has(polarEdgeKey(a, b));
 }
 
-export function generatePolarMaze(rings: number): PolarMaze {
+export function generatePolarMaze(
+  rings: number,
+  options: { algorithm?: MazeAlgorithm; braided?: boolean } = {},
+): PolarMaze {
+  const { algorithm = 'backtracker', braided = false } = options;
   const ringCounts: number[] = [1];
   for (let r = 1; r < rings; r++) {
     const prev = ringCounts[r - 1];
@@ -110,27 +116,113 @@ export function generatePolarMaze(rings: number): PolarMaze {
     cell.neighbors = Array.from(new Set(cell.neighbors));
   }
 
-  // Randomized DFS (Recursive Backtracker)
   const passages = new Set<string>();
-  const visited = new Set<string>();
   const startId = polarCellId(0, 0);
-  const stack: string[] = [startId];
-  visited.add(startId);
 
-  while (stack.length > 0) {
-    const currentId = stack[stack.length - 1];
-    const current = cells.get(currentId)!;
-    const unvisited = current.neighbors.filter((n) => !visited.has(n));
-
-    if (unvisited.length === 0) {
-      stack.pop();
-      continue;
+  if (algorithm === 'prim') {
+    const visited = new Set<string>([startId]);
+    const frontier: Array<[string, string]> = [];
+    for (const n of cells.get(startId)!.neighbors) {
+      frontier.push([startId, n]);
     }
 
-    const chosenId = unvisited[Math.floor(Math.random() * unvisited.length)];
-    passages.add(polarEdgeKey(currentId, chosenId));
-    visited.add(chosenId);
-    stack.push(chosenId);
+    while (frontier.length > 0) {
+      const idx = Math.floor(Math.random() * frontier.length);
+      const [fromId, toId] = frontier[idx];
+      frontier[idx] = frontier[frontier.length - 1];
+      frontier.pop();
+
+      if (visited.has(toId)) continue;
+      visited.add(toId);
+      passages.add(polarEdgeKey(fromId, toId));
+      for (const n of cells.get(toId)!.neighbors) {
+        if (!visited.has(n)) frontier.push([toId, n]);
+      }
+    }
+  } else if (algorithm === 'kruskal') {
+    const parent = new Map<string, string>();
+    for (const cell of cellList) parent.set(cell.id, cell.id);
+    const find = (x: string): string => {
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r)!;
+      let c = x;
+      while (c !== r) {
+        const next = parent.get(c)!;
+        parent.set(c, r);
+        c = next;
+      }
+      return r;
+    };
+
+    const edgeSet = new Set<string>();
+    const edges: Array<[string, string]> = [];
+    for (const cell of cellList) {
+      for (const n of cell.neighbors) {
+        const key = polarEdgeKey(cell.id, n);
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key);
+          edges.push([cell.id, n]);
+        }
+      }
+    }
+    for (let i = edges.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [edges[i], edges[j]] = [edges[j], edges[i]];
+    }
+    for (const [a, b] of edges) {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) {
+        parent.set(rb, ra);
+        passages.add(polarEdgeKey(a, b));
+      }
+    }
+  } else {
+    const visited = new Set<string>([startId]);
+    const stack: string[] = [startId];
+
+    while (stack.length > 0) {
+      const currentId = stack[stack.length - 1];
+      const current = cells.get(currentId)!;
+      const unvisited = current.neighbors.filter((n) => !visited.has(n));
+
+      if (unvisited.length === 0) {
+        stack.pop();
+        continue;
+      }
+
+      const chosenId = unvisited[Math.floor(Math.random() * unvisited.length)];
+      passages.add(polarEdgeKey(currentId, chosenId));
+      visited.add(chosenId);
+      stack.push(chosenId);
+    }
+  }
+
+  if (braided) {
+    const openCount = (cell: PolarCell): number =>
+      cell.neighbors.filter((n) => passages.has(polarEdgeKey(cell.id, n))).length;
+    const deadEnds = cellList.filter(
+      (cell) => cell.id !== startId && openCount(cell) === 1,
+    );
+    for (let i = deadEnds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deadEnds[i], deadEnds[j]] = [deadEnds[j], deadEnds[i]];
+    }
+    const toOpen = Math.max(1, Math.floor(deadEnds.length * 0.35));
+    let opened = 0;
+    for (const cell of deadEnds) {
+      if (opened >= toOpen) break;
+      if (openCount(cell) !== 1) continue;
+      const closed = cell.neighbors.filter(
+        (n) => !passages.has(polarEdgeKey(cell.id, n)),
+      );
+      if (closed.length === 0) continue;
+      const preferred = closed.filter((n) => openCount(cells.get(n)!) === 1);
+      const pool = preferred.length > 0 ? preferred : closed;
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+      passages.add(polarEdgeKey(cell.id, chosen));
+      opened++;
+    }
   }
 
   // Pick the farthest outer-ring cell from center as the classic end

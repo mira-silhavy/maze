@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { DPad } from './components/DPad';
 import { FocusToolbar } from './components/FocusToolbar';
 import { Header } from './components/Header';
@@ -6,14 +5,29 @@ import { MazeStage } from './components/MazeStage';
 import { PrintableMazeSvg } from './components/PrintableMazeSvg';
 import { SettingsPanel } from './components/SettingsPanel';
 import { StatsRow } from './components/StatsRow';
+import { useFullscreenFocus } from './game/fullscreen';
 import { useKeyboard } from './game/input';
 import { phase } from './game/reduce';
 import { useGame } from './game/useGame';
 
 export default function App() {
   const { state, dispatch } = useGame();
-  const [focusMode, setFocusMode] = useState(false);
-  useKeyboard(dispatch, phase(state) === 'won', focusMode, setFocusMode);
+  const {
+    focusMode,
+    browserFullscreen,
+    supported: fullscreenSupported,
+    enterFocus,
+    exitFocus,
+    setFocusMode,
+    toggleBrowserFullscreen,
+  } = useFullscreenFocus();
+  useKeyboard(
+    dispatch,
+    phase(state) === 'won',
+    focusMode,
+    setFocusMode,
+    state.settings.marbleMode,
+  );
 
   return (
     <>
@@ -30,7 +44,10 @@ export default function App() {
           <FocusToolbar
             state={state}
             dispatch={dispatch}
-            onExit={() => setFocusMode(false)}
+            onExit={exitFocus}
+            browserFullscreen={browserFullscreen}
+            fullscreenSupported={fullscreenSupported}
+            onToggleBrowserFullscreen={toggleBrowserFullscreen}
           />
         ) : (
           <Header settings={state.settings} />
@@ -47,7 +64,7 @@ export default function App() {
             <SettingsPanel
               state={state}
               dispatch={dispatch}
-              onEnterFocus={() => setFocusMode(true)}
+              onEnterFocus={() => enterFocus(true)}
             />
           )}
           {!focusMode && <StatsRow state={state} />}

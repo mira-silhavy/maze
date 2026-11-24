@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
+import type { MarbleBody } from '../game/marble';
 import { cellPositions, pathThrough, positionKey } from '../maze/generator';
 import type { MazeTheme } from '../maze/themes';
 import type {
@@ -8,6 +9,12 @@ import type {
   Maze,
   Position,
 } from '../maze/types';
+import {
+  drawMarbleCanvas,
+  drawThemedGoalCanvas,
+  drawThemedPlayerCanvas,
+  drawThemedTargetCanvas,
+} from './themeArt';
 
 interface MazeCanvasProps {
   maze: Maze;
@@ -20,6 +27,8 @@ interface MazeCanvasProps {
   targets: Position[];
   collected: Set<string>;
   theme: MazeTheme;
+  marbleMode?: boolean;
+  marbleRef?: MutableRefObject<MarbleBody>;
   fullScreen?: boolean;
 }
 
@@ -40,6 +49,8 @@ export function MazeCanvas({
   targets,
   collected,
   theme,
+  marbleMode = false,
+  marbleRef,
   fullScreen = false,
 }: MazeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,17 +61,23 @@ export function MazeCanvas({
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
 
-    const draw = () => {
+    let innerWidth = 220;
+    let innerHeight = 160;
+    let dpr = window.devicePixelRatio || 1;
+
+    const resize = () => {
       const rect = container.getBoundingClientRect();
-      const innerWidth = Math.max(220, Math.floor(rect.width - 16));
-      const innerHeight = Math.max(160, Math.floor(rect.height - 16));
-      const dpr = window.devicePixelRatio || 1;
+      innerWidth = Math.max(220, Math.floor(rect.width - 16));
+      innerHeight = Math.max(160, Math.floor(rect.height - 16));
+      dpr = window.devicePixelRatio || 1;
 
       canvas.width = Math.floor(innerWidth * dpr);
       canvas.height = Math.floor(innerHeight * dpr);
       canvas.style.width = `${innerWidth}px`;
       canvas.style.height = `${innerHeight}px`;
+    };
 
+    const draw = () => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
@@ -74,9 +91,41 @@ export function MazeCanvas({
       const offsetX = (innerWidth - cellSize * maze.cols) / 2;
       const offsetY = (innerHeight - cellSize * maze.rows) / 2;
 
+      const marble = marbleMode && marbleRef ? marbleRef.current : null;
+      const activeRow = marble ? marble.row : player.row;
+      const activeCol = marble ? marble.col : player.col;
+      const activeLevel = marble ? marble.level : player.level;
+      const activeX = marble
+        ? offsetX + marble.x * cellSize
+        : offsetX + (player.col + 0.5) * cellSize;
+      const activeY = marble
+        ? offsetY + marble.y * cellSize
+        : offsetY + (player.row + 0.5) * cellSize;
+
       // Background
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+      // Subtle starfield dust for Space theme
+      if (theme.id === 'space') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(226, 232, 240, 0.22)';
+        const starCount = Math.min(48, Math.floor((maze.rows * maze.cols) / 6));
+        for (let i = 0; i < starCount; i++) {
+          const sx = ((Math.sin(i * 127.1 + 1.3) * 43758.5453) % 1 + 1) % 1;
+          const sy = ((Math.sin(i * 269.5 + 4.7) * 24634.6345) % 1 + 1) % 1;
+          ctx.beginPath();
+          ctx.arc(
+            offsetX + sx * cellSize * maze.cols,
+            offsetY + sy * cellSize * maze.rows,
+            i % 3 === 0 ? 1.4 : 0.9,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+        }
+        ctx.restore();
+      }
 
       // Subtle visited cells tint
       ctx.fillStyle = theme.visitedFill;
@@ -139,28 +188,19 @@ export function MazeCanvas({
         ctx.restore();
       };
 
-      const drawPlayer = (under: boolean) => {
-        const playerX = offsetX + (player.col + 0.5) * cellSize;
-        const playerY = offsetY + (player.row + 0.5) * cellSize;
-        const radius = Math.max(3.5, cellSize * 0.3);
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = theme.playerFill;
-        if (under) {
-          ctx.globalAlpha = 0.55;
+      const drawActiveEntity = (under: boolean) => {
+        if (marble) {
+          drawMarbleCanvas(
+            ctx,
+            activeX,
+            activeY,
+            Math.max(4, cellSize * 0.29),
+            theme,
+            under,
+          );
         } else {
-          ctx.shadowColor = theme.playerFill;
-          ctx.shadowBlur = theme.isLight ? 4 : Math.max(8, cellSize * 0.5);
+          drawThemedPlayerCanvas(ctx, activeX, activeY, cellSize, theme, under);
         }
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(playerX, playerY, radius * 0.45, 0, Math.PI * 2);
-        ctx.fillStyle = theme.playerCore;
-        ctx.fill();
-        ctx.restore();
       };
 
       const wallWidth = Math.max(1.5, Math.min(3.5, cellSize * 0.1));
@@ -181,16 +221,25 @@ export function MazeCanvas({
         const deck = () =>
           ctx.rect(-half, -half + inset, cellSize, cellSize - 2 * inset);
 
+        // Under-tunnel shadow + raised deck fill with soft drop shadow
         local(() => {
           ctx.fillStyle = theme.isLight
-            ? 'rgba(0, 0, 0, 0.28)'
-            : 'rgba(0, 0, 0, 0.5)';
+            ? 'rgba(0, 0, 0, 0.24)'
+            : 'rgba(0, 0, 0, 0.52)';
           ctx.fillRect(-half, -half, cellSize, cellSize);
+
+          ctx.save();
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+          ctx.shadowBlur = Math.max(3, cellSize * 0.16);
           ctx.beginPath();
           deck();
           ctx.fillStyle = theme.background;
           ctx.fill();
-          ctx.globalAlpha = 0.25;
+          ctx.restore();
+
+          ctx.beginPath();
+          deck();
+          ctx.globalAlpha = theme.isLight ? 0.16 : 0.28;
           ctx.fillStyle = theme.wall;
           ctx.fill();
         });
@@ -204,11 +253,11 @@ export function MazeCanvas({
           strokeHint(part);
         }
         if (
-          player.level === 'under' &&
-          player.row === cell.row &&
-          player.col === cell.col
+          activeLevel === 'under' &&
+          activeRow === cell.row &&
+          activeCol === cell.col
         ) {
-          drawPlayer(true);
+          drawActiveEntity(true);
         }
         ctx.restore();
 
@@ -226,7 +275,7 @@ export function MazeCanvas({
           ctx.stroke();
 
           ctx.globalAlpha = 1;
-          ctx.lineWidth = wallWidth * 1.6;
+          ctx.lineWidth = wallWidth * 1.65;
           ctx.beginPath();
           for (const y of [-half + inset, half - inset]) {
             ctx.moveTo(-half, y);
@@ -255,14 +304,15 @@ export function MazeCanvas({
       const startCenterX = offsetX + (maze.start.col + 0.5) * cellSize;
       const startCenterY = offsetY + (maze.start.row + 0.5) * cellSize;
 
+      ctx.fillStyle = theme.startHighlight;
+      ctx.fillRect(
+        offsetX + maze.start.col * cellSize + 1,
+        offsetY + maze.start.row * cellSize + 1,
+        cellSize - 2,
+        cellSize - 2,
+      );
+
       if (gameMode === 'collect') {
-        ctx.fillStyle = theme.startHighlight;
-        ctx.fillRect(
-          offsetX + maze.start.col * cellSize + 1,
-          offsetY + maze.start.row * cellSize + 1,
-          cellSize - 2,
-          cellSize - 2,
-        );
         const crossArm = Math.max(4, cellSize * 0.24);
         ctx.save();
         ctx.strokeStyle = theme.startCross;
@@ -275,14 +325,6 @@ export function MazeCanvas({
         ctx.lineTo(startCenterX - crossArm, startCenterY + crossArm);
         ctx.stroke();
         ctx.restore();
-      } else {
-        ctx.fillStyle = theme.startHighlight;
-        ctx.fillRect(
-          offsetX + maze.start.col * cellSize + 1,
-          offsetY + maze.start.row * cellSize + 1,
-          cellSize - 2,
-          cellSize - 2,
-        );
       }
 
       // Goal(s)
@@ -296,38 +338,14 @@ export function MazeCanvas({
           cellSize - 2,
           cellSize - 2,
         );
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.fillStyle = theme.goalFill;
-        ctx.shadowColor = theme.goalFill;
-        ctx.shadowBlur = theme.isLight ? 4 : Math.max(6, cellSize * 0.45);
-        const goalSize = Math.max(5, cellSize * 0.44);
-        ctx.roundRect(
-          endCenterX - goalSize / 2,
-          endCenterY - goalSize / 2,
-          goalSize,
-          goalSize,
-          Math.max(2, cellSize * 0.12),
-        );
-        ctx.fill();
-        ctx.restore();
+        drawThemedGoalCanvas(ctx, endCenterX, endCenterY, cellSize, theme);
       } else {
         for (const target of targets) {
           const key = positionKey(target);
           const isCollected = collected.has(key);
           const cx = offsetX + (target.col + 0.5) * cellSize;
           const cy = offsetY + (target.row + 0.5) * cellSize;
-          const ringRadius = Math.max(3.5, cellSize * 0.28);
-
-          ctx.save();
-          if (isCollected) {
-            ctx.beginPath();
-            ctx.arc(cx, cy, ringRadius * 0.75, 0, Math.PI * 2);
-            ctx.strokeStyle = theme.targetCollected;
-            ctx.lineWidth = Math.max(1.5, cellSize * 0.08);
-            ctx.stroke();
-          } else {
+          if (!isCollected) {
             ctx.fillStyle = theme.targetFill;
             ctx.fillRect(
               offsetX + target.col * cellSize + 1,
@@ -335,15 +353,8 @@ export function MazeCanvas({
               cellSize - 2,
               cellSize - 2,
             );
-            ctx.beginPath();
-            ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = theme.targetStroke;
-            ctx.shadowColor = theme.targetStroke;
-            ctx.shadowBlur = theme.isLight ? 3 : Math.max(6, cellSize * 0.35);
-            ctx.lineWidth = Math.max(2, cellSize * 0.12);
-            ctx.stroke();
           }
-          ctx.restore();
+          drawThemedTargetCanvas(ctx, cx, cy, cellSize, theme, isCollected);
         }
       }
 
@@ -352,6 +363,7 @@ export function MazeCanvas({
         strokeHint(hintPath);
       }
 
+      // Bridges
       for (const row of maze.grid) {
         for (const cell of row) {
           if (cell.bridge) drawBridge(cell);
@@ -391,15 +403,48 @@ export function MazeCanvas({
       }
       ctx.stroke();
 
-      if (player.level !== 'under') drawPlayer(false);
+      if (activeLevel !== 'under') {
+        drawActiveEntity(false);
+      }
     };
 
+    resize();
     draw();
 
-    const observer = new ResizeObserver(draw);
+    const observer = new ResizeObserver(() => {
+      resize();
+      draw();
+    });
     observer.observe(container);
-    return () => observer.disconnect();
-  }, [maze, player, visited, trail, hintPath, gameMode, targets, collected, theme]);
+
+    if (!marbleMode || !marbleRef) {
+      return () => observer.disconnect();
+    }
+
+    let rafId = 0;
+    const tick = () => {
+      draw();
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [
+    maze,
+    player,
+    visited,
+    trail,
+    hintPath,
+    gameMode,
+    targets,
+    collected,
+    theme,
+    marbleMode,
+    marbleRef,
+  ]);
 
   return (
     <div

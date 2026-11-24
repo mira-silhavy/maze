@@ -30,6 +30,7 @@ export function useKeyboard(
   won: boolean,
   focusMode: boolean,
   setFocusMode: (update: (v: boolean) => boolean) => void,
+  marbleMode = false,
 ): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -42,6 +43,7 @@ export function useKeyboard(
 
       const dir = KEY_DIRECTIONS[event.key];
       if (dir) {
+        if (marbleMode) return;
         event.preventDefault();
         dispatch({ type: 'move', ...DIRECTION_VECTORS[dir] });
         return;
@@ -73,7 +75,7 @@ export function useKeyboard(
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dispatch, won, focusMode, setFocusMode]);
+  }, [dispatch, won, focusMode, setFocusMode, marbleMode]);
 }
 
 const STEP_THRESHOLD_PX = 24;
