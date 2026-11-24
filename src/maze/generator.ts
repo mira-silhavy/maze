@@ -1,4 +1,4 @@
-import type { Cell, Direction, Maze, Position } from './types';
+import type { Axis, Cell, Direction, Maze, Position } from './types';
 
 const DIRECTIONS: ReadonlyArray<{
   dir: Direction;
@@ -12,7 +12,21 @@ const DIRECTIONS: ReadonlyArray<{
   { dir: 'left', opposite: 'right', dRow: 0, dCol: -1 },
 ];
 
-export function generateMaze(rows: number, cols: number): Maze {
+const TUNNEL_CHANCE = 0.2;
+
+export function axisOf(dir: Direction): Axis {
+  return dir === 'left' || dir === 'right' ? 'horizontal' : 'vertical';
+}
+
+export function crossAxis(axis: Axis): Axis {
+  return axis === 'horizontal' ? 'vertical' : 'horizontal';
+}
+
+export function generateMaze(
+  rows: number,
+  cols: number,
+  { bridges = false }: { bridges?: boolean } = {},
+): Maze {
   const grid: Cell[][] = Array.from({ length: rows }, (_, row) =>
     Array.from({ length: cols }, (_, col) => ({
       row,
@@ -35,6 +49,7 @@ export function generateMaze(rows: number, cols: number): Maze {
       col: number;
       dir: Direction;
       opposite: Direction;
+      under?: Cell;
     }> = [];
 
     for (const { dir, opposite, dRow, dCol } of DIRECTIONS) {
@@ -51,6 +66,32 @@ export function generateMaze(rows: number, cols: number): Maze {
       }
     }
 
+    if (bridges && !grid[current.row][current.col].bridge) {
+      for (const { dir, opposite, dRow, dCol } of DIRECTIONS) {
+        const over = grid[current.row + dRow]?.[current.col + dCol];
+        const farRow = current.row + 2 * dRow;
+        const farCol = current.col + 2 * dCol;
+        if (
+          over &&
+          isBridgeable(over, axisOf(dir), rows, cols) &&
+          farRow >= 0 &&
+          farRow < rows &&
+          farCol >= 0 &&
+          farCol < cols &&
+          !visited[farRow][farCol] &&
+          Math.random() < TUNNEL_CHANCE
+        ) {
+          unvisitedNeighbors.push({
+            row: farRow,
+            col: farCol,
+            dir,
+            opposite,
+            under: over,
+          });
+        }
+      }
+    }
+
     if (unvisitedNeighbors.length === 0) {
       stack.pop();
       continue;
@@ -61,6 +102,9 @@ export function generateMaze(rows: number, cols: number): Maze {
 
     grid[current.row][current.col].walls[chosen.dir] = false;
     grid[chosen.row][chosen.col].walls[chosen.opposite] = false;
+    if (chosen.under) {
+      chosen.under.bridge = crossAxis(axisOf(chosen.dir));
+    }
 
     visited[chosen.row][chosen.col] = true;
     stack.push({ row: chosen.row, col: chosen.col });
@@ -75,27 +119,45 @@ export function generateMaze(rows: number, cols: number): Maze {
   };
 }
 
+function isBridgeable(
+  cell: Cell,
+  underAxis: Axis,
+  rows: number,
+  cols: number,
+): boolean {
+  const { top, right, bottom, left } = cell.walls;
+  const straight =
+    underAxis === 'vertical'
+      ? top && bottom && !left && !right
+      : left && right && !top && !bottom;
+  const isStart = cell.row === 0 && cell.col === 0;
+  const isEnd = cell.row === rows - 1 && cell.col === cols - 1;
+  return straight && !cell.bridge && !isStart && !isEnd;
+}
+
 export function gridStep(
   maze: Maze,
   from: Position,
   dir: Direction,
 ): Position | null {
-  return canMove(maze, from, dir) ? movePosition(from, dir) : null;
-}
-
-function canMove(maze: Maze, from: Position, dir: Direction): boolean {
   const cell = maze.grid[from.row]?.[from.col];
-  if (!cell || cell.walls[dir]) {
-    return false;
+  if (!cell) return null;
+
+  const axis = axisOf(dir);
+  if (cell.bridge) {
+    const levelAxis =
+      from.level === 'under' ? crossAxis(cell.bridge) : cell.bridge;
+    if (axis !== levelAxis) return null;
   }
+  if (from.level !== 'under' && cell.walls[dir]) return null;
 
   const next = movePosition(from, dir);
-  return (
-    next.row >= 0 &&
-    next.row < maze.rows &&
-    next.col >= 0 &&
-    next.col < maze.cols
-  );
+  const nextCell = maze.grid[next.row]?.[next.col];
+  if (!nextCell) return null;
+  if (nextCell.bridge) {
+    next.level = nextCell.bridge === axis ? 'over' : 'under';
+  }
+  return next;
 }
 
 function movePosition(pos: Position, dir: Direction): Position {
@@ -112,5 +174,16 @@ function movePosition(pos: Position, dir: Direction): Position {
 }
 
 export function positionKey(pos: Position): string {
-  return `${pos.row},${pos.col}`;
+  const key = `${pos.row},${pos.col}`;
+  return pos.level ? `${key},${pos.level}` : key;
+}
+
+export function cellPositions(cell: Cell): Position[] {
+  const { row, col } = cell;
+  return cell.bridge
+    ? [
+        { row, col, level: 'over' },
+        { row, col, level: 'under' },
+      ]
+    : [{ row, col }];
 }

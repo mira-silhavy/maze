@@ -1,14 +1,20 @@
 export type Direction = 'top' | 'right' | 'bottom' | 'left';
 
+export type Axis = 'horizontal' | 'vertical';
+
+export type Level = 'over' | 'under';
+
 export interface Position {
   row: number;
   col: number;
+  level?: Level;
 }
 
 export interface Cell {
   row: number;
   col: number;
   walls: Record<Direction, boolean>;
+  bridge?: Axis;
 }
 
 export interface Maze {
