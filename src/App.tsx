@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent,
-} from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeft,
@@ -40,38 +33,18 @@ import { CircularMazeSvg } from './components/CircularMazeSvg';
 import { CurvedMazeSvg } from './components/CurvedMazeSvg';
 import { MazeCanvas } from './components/MazeCanvas';
 import { PrintableMazeSvg } from './components/PrintableMazeSvg';
-import { generateMaze, gridStep, positionKey } from './maze/generator';
-import {
-  findPolarMoveInDirection,
-  findPolarShortestPath,
-  generatePolarMaze,
-  selectPolarDeadEndTargets,
-  type PolarMaze,
-} from './maze/polar';
-import {
-  findShortestPath,
-  findShortestPathToNearest,
-  selectDeadEndTargets,
-} from './maze/solver';
-import {
-  playCollectSound,
-  playStepSound,
-  playWallBumpSound,
-  playWinSound,
-} from './maze/sound';
+import { gridGeometry, polarGeometry } from './game/geometry';
+import { DIRECTION_VECTORS, useDragMove, useKeyboard } from './game/input';
+import type { TargetCount } from './game/model';
+import { hintPath, phase, playerOf, visitedKeys } from './game/reduce';
+import { useGame } from './game/useGame';
 import { getThemeById, MAZE_THEMES, type ThemeId } from './maze/themes';
 import {
   ASPECT_RATIO_PRESETS,
   DIFFICULTY_PRESETS,
   getMazeDimensions,
   type AspectRatioId,
-  type AspectRatioPreset,
-  type DifficultyPreset,
   type Direction,
-  type GameMode,
-  type Maze,
-  type MazeStyle,
-  type Position,
 } from './maze/types';
 
 function formatTime(totalSeconds: number): string {
@@ -104,10 +77,8 @@ function ThemeIcon({ id }: { id: ThemeId }) {
   }
 }
 
-type CircleCountOption = number | 'all';
-
 const CIRCLE_COUNT_OPTIONS: ReadonlyArray<{
-  value: CircleCountOption;
+  value: TargetCount;
   label: string;
 }> = [
   { value: 3, label: '3' },
@@ -118,523 +89,58 @@ const CIRCLE_COUNT_OPTIONS: ReadonlyArray<{
   { value: 'all', label: 'Vše' },
 ];
 
-function resolveCircleLimit(option: CircleCountOption): number {
-  return option === 'all' ? Number.POSITIVE_INFINITY : option;
-}
-
-const DIRECTION_VECTORS: Record<Direction, { dx: number; dy: number }> = {
-  top: { dx: 0, dy: -1 },
-  right: { dx: 1, dy: 0 },
-  bottom: { dx: 0, dy: 1 },
-  left: { dx: -1, dy: 0 },
-};
-
-interface GameState {
-  gridMaze: Maze;
-  polarMaze: PolarMaze;
-  gridPlayer: Position;
-  polarPlayer: string;
-  gridTrail: Position[];
-  polarTrail: string[];
-  visited: Set<string>;
-  gridTargets: Position[];
-  polarTargets: string[];
-  collected: Set<string>;
-  steps: number;
-  elapsedSeconds: number;
-  started: boolean;
-  won: boolean;
-  showHint: boolean;
-}
-
-function createInitialState(
-  difficulty: DifficultyPreset,
-  aspectRatio: AspectRatioPreset,
-  style: MazeStyle,
-  circleOption: CircleCountOption,
-): GameState {
-  const { rows, cols } = getMazeDimensions(difficulty, aspectRatio);
-  const gridMaze = generateMaze(rows, cols);
-  const polarMaze = generatePolarMaze(difficulty.polarRings);
-  const maxCircles = resolveCircleLimit(circleOption);
-
-  return {
-    gridMaze,
-    polarMaze,
-    gridPlayer: gridMaze.start,
-    polarPlayer: polarMaze.startId,
-    gridTrail: [gridMaze.start],
-    polarTrail: [polarMaze.startId],
-    visited: new Set([
-      style === 'circular' ? polarMaze.startId : positionKey(gridMaze.start),
-    ]),
-    gridTargets: selectDeadEndTargets(gridMaze, maxCircles),
-    polarTargets: selectPolarDeadEndTargets(polarMaze, maxCircles),
-    collected: new Set<string>(),
-    steps: 0,
-    elapsedSeconds: 0,
-    started: false,
-    won: false,
-    showHint: false,
-  };
-}
-
 export default function App() {
-  const [preset, setPreset] = useState<DifficultyPreset>(DIFFICULTY_PRESETS[1]);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatioPreset>(
-    ASPECT_RATIO_PRESETS[0],
-  );
-  const [gameMode, setGameMode] = useState<GameMode>('classic');
-  const [mazeStyle, setMazeStyle] = useState<MazeStyle>('classic');
-  const [themeId, setThemeId] = useState<ThemeId>('space');
-  const [circleOption, setCircleOption] = useState<CircleCountOption>(7);
+  const { state, dispatch } = useGame();
   const [focusMode, setFocusMode] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [eraseBacktrack, setEraseBacktrack] = useState(true);
-  const [game, setGame] = useState<GameState>(() =>
-    createInitialState(
-      DIFFICULTY_PRESETS[1],
-      ASPECT_RATIO_PRESETS[0],
-      'classic',
-      7,
-    ),
+  const { settings, round, showHint, elapsedSeconds } = state;
+  const won = phase(state) === 'won';
+  useKeyboard(dispatch, won, focusMode, setFocusMode);
+  const drag = useDragMove(dispatch, won);
+
+  const gameMode = settings.mode;
+  const mazeStyle = settings.style;
+  const soundEnabled = settings.sound;
+  const eraseBacktrack = settings.eraseBacktrack;
+  const aspectRatio = ASPECT_RATIO_PRESETS.find(
+    (a) => a.id === settings.aspectRatioId,
+  )!;
+  const isCircular = round.kind === 'polar';
+  const theme = useMemo(() => getThemeById(settings.themeId), [settings.themeId]);
+  const optimalSteps = round.board.optimalSteps;
+  const totalTargets = round.board.targets.length;
+  const collected = round.run.collected;
+  const steps = round.run.steps;
+
+  const gridRound = round.kind === 'grid' ? round : null;
+  const polarRound = round.kind === 'polar' ? round : null;
+  const visited = useMemo(
+    () =>
+      round.kind === 'grid'
+        ? visitedKeys(gridGeometry, round.run)
+        : visitedKeys(polarGeometry, round.run),
+    [round],
   );
-  const gameRef = useRef(game);
-  gameRef.current = game;
-
-  const isCircular = mazeStyle === 'circular';
-  const theme = useMemo(() => getThemeById(themeId), [themeId]);
-
-  const startNewMaze = useCallback(
-    (
-      nextPreset: DifficultyPreset,
-      nextAspect: AspectRatioPreset,
-      nextStyle: MazeStyle,
-      nextMode: GameMode,
-      nextCircleOption: CircleCountOption = circleOption,
-    ) => {
-      setPreset(nextPreset);
-      setAspectRatio(nextAspect);
-      setMazeStyle(nextStyle);
-      setGameMode(nextMode);
-      setCircleOption(nextCircleOption);
-      setGame(
-        createInitialState(
-          nextPreset,
-          nextAspect,
-          nextStyle,
-          nextCircleOption,
-        ),
-      );
-    },
-    [circleOption],
+  const gridHintPath = useMemo(
+    () =>
+      gridRound ? hintPath(gridGeometry, gridRound, gameMode, showHint) : [],
+    [gridRound, gameMode, showHint],
   );
-
-  const handleCircleOptionChange = useCallback(
-    (nextOption: CircleCountOption) => {
-      setCircleOption(nextOption);
-      const maxCircles = resolveCircleLimit(nextOption);
-      setGame((prev) => ({
-        ...prev,
-        gridPlayer: prev.gridMaze.start,
-        polarPlayer: prev.polarMaze.startId,
-        gridTrail: [prev.gridMaze.start],
-        polarTrail: [prev.polarMaze.startId],
-        visited: new Set([
-          isCircular ? prev.polarMaze.startId : positionKey(prev.gridMaze.start),
-        ]),
-        gridTargets: selectDeadEndTargets(prev.gridMaze, maxCircles),
-        polarTargets: selectPolarDeadEndTargets(prev.polarMaze, maxCircles),
-        collected: new Set<string>(),
-        steps: 0,
-        elapsedSeconds: 0,
-        started: false,
-        won: false,
-      }));
-    },
-    [isCircular],
+  const polarHintPath = useMemo(
+    () =>
+      polarRound
+        ? hintPath(polarGeometry, polarRound, gameMode, showHint)
+        : [],
+    [polarRound, gameMode, showHint],
   );
 
-  const resetPosition = useCallback(() => {
-    setGame((prev) => ({
-      ...prev,
-      gridPlayer: prev.gridMaze.start,
-      polarPlayer: prev.polarMaze.startId,
-      gridTrail: [prev.gridMaze.start],
-      polarTrail: [prev.polarMaze.startId],
-      visited: new Set([
-        isCircular ? prev.polarMaze.startId : positionKey(prev.gridMaze.start),
-      ]),
-      collected: new Set<string>(),
-      steps: 0,
-      elapsedSeconds: 0,
-      started: false,
-      won: false,
-    }));
-  }, [isCircular]);
-
-  const optimalSteps = useMemo(() => {
-    if (isCircular) {
-      return Math.max(
-        0,
-        findPolarShortestPath(game.polarMaze, game.polarMaze.startId, [
-          game.polarMaze.endId,
-        ]).length - 1,
-      );
-    }
-    return Math.max(
-      0,
-      findShortestPath(game.gridMaze, game.gridMaze.start, game.gridMaze.end)
-        .length - 1,
-    );
-  }, [isCircular, game.gridMaze, game.polarMaze]);
-
-  const gridHintPath = useMemo(() => {
-    if (!game.showHint || game.won || isCircular) return [];
-    if (gameMode === 'classic') {
-      return findShortestPath(game.gridMaze, game.gridPlayer, game.gridMaze.end);
-    }
-    const remaining = game.gridTargets.filter(
-      (t) => !game.collected.has(positionKey(t)),
-    );
-    return findShortestPathToNearest(game.gridMaze, game.gridPlayer, remaining);
-  }, [
-    game.showHint,
-    game.won,
-    isCircular,
-    gameMode,
-    game.gridMaze,
-    game.gridPlayer,
-    game.gridTargets,
-    game.collected,
-  ]);
-
-  const polarHintPath = useMemo(() => {
-    if (!game.showHint || game.won || !isCircular) return [];
-    if (gameMode === 'classic') {
-      return findPolarShortestPath(game.polarMaze, game.polarPlayer, [
-        game.polarMaze.endId,
-      ]);
-    }
-    const remaining = game.polarTargets.filter((id) => !game.collected.has(id));
-    return findPolarShortestPath(game.polarMaze, game.polarPlayer, remaining);
-  }, [
-    game.showHint,
-    game.won,
-    isCircular,
-    gameMode,
-    game.polarMaze,
-    game.polarPlayer,
-    game.polarTargets,
-    game.collected,
-  ]);
-
-  const totalTargets = isCircular
-    ? game.polarTargets.length
-    : game.gridTargets.length;
-
-  const dragAnchorRef = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const moveByVector = useCallback(
-    (dx: number, dy: number) => {
-      const len = Math.hypot(dx, dy);
-      if (len === 0) return;
-
-      const prev = gameRef.current;
-      if (prev.won) return;
-
-      const nx = dx / len;
-      const ny = dy / len;
-
-      const primary: Direction =
-        Math.abs(dx) >= Math.abs(dy)
-          ? dx > 0
-            ? 'right'
-            : 'left'
-          : dy > 0
-            ? 'bottom'
-            : 'top';
-
-      let secondary: Direction | undefined;
-      if (Math.abs(dx) >= Math.abs(dy) && Math.abs(dy) >= Math.abs(dx) * 0.35) {
-        secondary = dy > 0 ? 'bottom' : 'top';
-      } else if (
-        Math.abs(dy) > Math.abs(dx) &&
-        Math.abs(dx) >= Math.abs(dy) * 0.35
-      ) {
-        secondary = dx > 0 ? 'right' : 'left';
-      }
-
-      if (isCircular) {
-        const nextId = findPolarMoveInDirection(
-          prev.polarMaze,
-          prev.polarPlayer,
-          nx,
-          ny,
-        );
-        if (!nextId) {
-          if (soundEnabled) playWallBumpSound();
-          return;
-        }
-
-        const isBacktracking =
-          eraseBacktrack &&
-          prev.polarTrail.length >= 2 &&
-          prev.polarTrail[prev.polarTrail.length - 2] === nextId;
-
-        const nextTrail = isBacktracking
-          ? prev.polarTrail.slice(0, -1)
-          : [...prev.polarTrail, nextId];
-
-        const visited = isBacktracking
-          ? new Set(nextTrail)
-          : new Set(prev.visited).add(nextId);
-
-        const collected = new Set(prev.collected);
-        let newlyCollected = false;
-        let won = false;
-        if (gameMode === 'collect') {
-          if (prev.polarTargets.includes(nextId) && !collected.has(nextId)) {
-            collected.add(nextId);
-            newlyCollected = true;
-          }
-          won = collected.size >= prev.polarTargets.length;
-        } else {
-          won = nextId === prev.polarMaze.endId;
-        }
-
-        if (soundEnabled) {
-          if (won) playWinSound();
-          else if (newlyCollected) playCollectSound(collected.size);
-          else playStepSound();
-        }
-
-        const nextState: GameState = {
-          ...prev,
-          polarPlayer: nextId,
-          polarTrail: nextTrail,
-          visited,
-          collected,
-          steps: prev.steps + 1,
-          started: true,
-          won,
-        };
-        gameRef.current = nextState;
-        setGame(nextState);
-        return;
-      }
-
-      const nextPos =
-        gridStep(prev.gridMaze, prev.gridPlayer, primary) ??
-        (secondary ? gridStep(prev.gridMaze, prev.gridPlayer, secondary) : null);
-
-      if (!nextPos) {
-        if (soundEnabled) playWallBumpSound();
-        return;
-      }
-
-      const nextKey = positionKey(nextPos);
-
-      const prevBeforeLast =
-        prev.gridTrail.length >= 2
-          ? prev.gridTrail[prev.gridTrail.length - 2]
-          : null;
-      const isBacktracking =
-        eraseBacktrack &&
-        prevBeforeLast !== null &&
-        prevBeforeLast.row === nextPos.row &&
-        prevBeforeLast.col === nextPos.col;
-
-      const nextTrail = isBacktracking
-        ? prev.gridTrail.slice(0, -1)
-        : [...prev.gridTrail, nextPos];
-
-      const visited = isBacktracking
-        ? new Set(nextTrail.map(positionKey))
-        : new Set(prev.visited).add(nextKey);
-
-      const collected = new Set(prev.collected);
-      let newlyCollected = false;
-      let won = false;
-      if (gameMode === 'collect') {
-        if (
-          prev.gridTargets.some((t) => positionKey(t) === nextKey) &&
-          !collected.has(nextKey)
-        ) {
-          collected.add(nextKey);
-          newlyCollected = true;
-        }
-        won = collected.size >= prev.gridTargets.length;
-      } else {
-        won =
-          nextPos.row === prev.gridMaze.end.row &&
-          nextPos.col === prev.gridMaze.end.col;
-      }
-
-      if (soundEnabled) {
-        if (won) playWinSound();
-        else if (newlyCollected) playCollectSound(collected.size);
-        else playStepSound();
-      }
-
-      const nextState: GameState = {
-        ...prev,
-        gridPlayer: nextPos,
-        gridTrail: nextTrail,
-        visited,
-        collected,
-        steps: prev.steps + 1,
-        started: true,
-        won,
-      };
-      gameRef.current = nextState;
-      setGame(nextState);
-    },
-    [isCircular, gameMode, soundEnabled, eraseBacktrack],
-  );
-
-  const move = useCallback(
-    (dir: Direction) => {
-      const { dx, dy } = DIRECTION_VECTORS[dir];
-      moveByVector(dx, dy);
-    },
-    [moveByVector],
-  );
-
-  const handleMazePointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (game.won) return;
-      if (event.button !== 0 && event.pointerType === 'mouse') return;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragAnchorRef.current = {
-        pointerId: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-      };
-    },
-    [game.won],
-  );
-
-  const handleMazePointerMove = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const anchor = dragAnchorRef.current;
-      if (!anchor || anchor.pointerId !== event.pointerId) return;
-
-      const dx = event.clientX - anchor.x;
-      const dy = event.clientY - anchor.y;
-      const stepThreshold = 24;
-
-      if (Math.hypot(dx, dy) >= stepThreshold) {
-        moveByVector(dx, dy);
-        anchor.x = event.clientX;
-        anchor.y = event.clientY;
-      }
-    },
-    [moveByVector],
-  );
-
-  const handleMazePointerEnd = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const anchor = dragAnchorRef.current;
-      if (!anchor || anchor.pointerId !== event.pointerId) return;
-      dragAnchorRef.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!game.started || game.won) return;
-    const interval = window.setInterval(() => {
-      setGame((prev) => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [game.started, game.won]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-
-      const keyMap: Record<string, Direction> = {
-        ArrowUp: 'top',
-        ArrowDown: 'bottom',
-        ArrowLeft: 'left',
-        ArrowRight: 'right',
-        w: 'top',
-        W: 'top',
-        s: 'bottom',
-        S: 'bottom',
-        a: 'left',
-        A: 'left',
-        d: 'right',
-        D: 'right',
-      };
-
-      const dir = keyMap[event.key];
-      if (dir) {
-        event.preventDefault();
-        move(dir);
-        return;
-      }
-
-      if (event.key === 'r' || event.key === 'R') {
-        event.preventDefault();
-        startNewMaze(preset, aspectRatio, mazeStyle, gameMode);
-        return;
-      }
-
-      if (event.key === 'f' || event.key === 'F') {
-        event.preventDefault();
-        setFocusMode((v) => !v);
-        return;
-      }
-
-      if (event.key === 'Escape' && focusMode) {
-        event.preventDefault();
-        setFocusMode(false);
-        return;
-      }
-
-      if (game.won && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault();
-        startNewMaze(preset, aspectRatio, mazeStyle, gameMode);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    move,
-    preset,
-    aspectRatio,
-    mazeStyle,
-    gameMode,
-    startNewMaze,
-    game.won,
-    focusMode,
-  ]);
+  const move = (dir: Direction) =>
+    dispatch({ type: 'move', ...DIRECTION_VECTORS[dir] });
+  const newMaze = () => dispatch({ type: 'newMaze' });
+  const toggleHint = () => dispatch({ type: 'toggleHint' });
 
   return (
     <>
-      <PrintableMazeSvg
-        mazeStyle={mazeStyle}
-        gameMode={gameMode}
-        gridMaze={game.gridMaze}
-        polarMaze={game.polarMaze}
-        gridTargets={game.gridTargets}
-        polarTargets={game.polarTargets}
-      />
+      <PrintableMazeSvg settings={settings} round={round} />
 
       <div
         className={
@@ -649,14 +155,16 @@ export default function App() {
             <div className="flex items-center gap-1.5 rounded-xl bg-slate-800/90 px-2.5 py-1.5 text-xs font-semibold text-amber-300">
               <CircleDot className="h-3.5 w-3.5" />
               <span className="font-mono">
-                {game.collected.size}/{totalTargets}
+                {collected.size}/{totalTargets}
               </span>
             </div>
           )}
 
           <button
             type="button"
-            onClick={() => setSoundEnabled((v) => !v)}
+            onClick={() =>
+              dispatch({ type: 'configure', patch: { sound: !soundEnabled } })
+            }
             aria-label={soundEnabled ? 'Vypnout zvuky' : 'Zapnout zvuky'}
             title={soundEnabled ? 'Vypnout zvuky' : 'Zapnout zvuky'}
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl transition ${
@@ -674,13 +182,11 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() =>
-              setGame((prev) => ({ ...prev, showHint: !prev.showHint }))
-            }
+            onClick={toggleHint}
             aria-label="Nápověda"
             title="Nápověda"
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl transition ${
-              game.showHint
+              showHint
                 ? 'bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/50'
                 : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
             }`}
@@ -690,9 +196,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() =>
-              startNewMaze(preset, aspectRatio, mazeStyle, gameMode)
-            }
+            onClick={newMaze}
             aria-label="Nové bludiště"
             title="Nové bludiště"
             className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-emerald-500 text-slate-950 transition hover:bg-emerald-400"
@@ -741,7 +245,7 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-1.5">
               {DIFFICULTY_PRESETS.map((item) => {
-                const active = item.id === preset.id;
+                const active = item.id === settings.difficultyId;
                 const dims = getMazeDimensions(item, aspectRatio);
                 const sizeText = isCircular
                   ? `${item.polarRings} kruhů`
@@ -751,7 +255,10 @@ export default function App() {
                     key={item.id}
                     type="button"
                     onClick={() =>
-                      startNewMaze(item, aspectRatio, mazeStyle, gameMode)
+                      dispatch({
+                        type: 'configure',
+                        patch: { difficultyId: item.id },
+                      })
                     }
                     className={`cursor-pointer rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                       active
@@ -768,11 +275,9 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() =>
-                  setGame((prev) => ({ ...prev, showHint: !prev.showHint }))
-                }
+                onClick={toggleHint}
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition sm:text-sm ${
-                  game.showHint
+                  showHint
                     ? 'bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/50'
                     : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                 }`}
@@ -784,7 +289,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={resetPosition}
+                onClick={() => dispatch({ type: 'restart' })}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700 sm:text-sm"
                 title="Vrátit se na start"
               >
@@ -794,9 +299,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() =>
-                  startNewMaze(preset, aspectRatio, mazeStyle, gameMode)
-                }
+                onClick={newMaze}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 sm:text-sm"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -807,7 +310,12 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setEraseBacktrack((v) => !v)}
+                onClick={() =>
+                  dispatch({
+                    type: 'configure',
+                    patch: { eraseBacktrack: !eraseBacktrack },
+                  })
+                }
                 aria-label="Gumování slepých uliček"
                 className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl transition ${
                   eraseBacktrack
@@ -825,7 +333,9 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setSoundEnabled((v) => !v)}
+                onClick={() =>
+                  dispatch({ type: 'configure', patch: { sound: !soundEnabled } })
+                }
                 aria-label={soundEnabled ? 'Vypnout zvuky' : 'Zapnout zvuky'}
                 className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl transition ${
                   soundEnabled
@@ -871,7 +381,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() =>
-                  startNewMaze(preset, aspectRatio, mazeStyle, 'classic')
+                  dispatch({ type: 'configure', patch: { mode: 'classic' } })
                 }
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                   gameMode === 'classic'
@@ -885,7 +395,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() =>
-                  startNewMaze(preset, aspectRatio, mazeStyle, 'collect')
+                  dispatch({ type: 'configure', patch: { mode: 'collect' } })
                 }
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                   gameMode === 'collect'
@@ -904,7 +414,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() =>
-                  startNewMaze(preset, aspectRatio, 'classic', gameMode)
+                  dispatch({ type: 'configure', patch: { style: 'classic' } })
                 }
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                   mazeStyle === 'classic'
@@ -918,7 +428,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() =>
-                  startNewMaze(preset, aspectRatio, 'curved', gameMode)
+                  dispatch({ type: 'configure', patch: { style: 'curved' } })
                 }
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                   mazeStyle === 'curved'
@@ -932,7 +442,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() =>
-                  startNewMaze(preset, aspectRatio, 'circular', gameMode)
+                  dispatch({ type: 'configure', patch: { style: 'circular' } })
                 }
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                   mazeStyle === 'circular'
@@ -952,12 +462,17 @@ export default function App() {
               <span className="text-xs font-medium text-slate-400">Motiv:</span>
               <div className="flex flex-wrap items-center gap-1.5">
                 {MAZE_THEMES.map((item) => {
-                  const active = item.id === themeId;
+                  const active = item.id === settings.themeId;
                   return (
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => setThemeId(item.id)}
+                      onClick={() =>
+                        dispatch({
+                          type: 'configure',
+                          patch: { themeId: item.id },
+                        })
+                      }
                       className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                         active
                           ? 'bg-pink-500 text-white shadow-sm shadow-pink-500/40'
@@ -985,7 +500,10 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() =>
-                          startNewMaze(preset, item, mazeStyle, gameMode)
+                          dispatch({
+                            type: 'configure',
+                            patch: { aspectRatioId: item.id },
+                          })
                         }
                         className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                           active
@@ -1009,12 +527,17 @@ export default function App() {
                 </span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {CIRCLE_COUNT_OPTIONS.map((item) => {
-                    const active = item.value === circleOption;
+                    const active = item.value === settings.targetCount;
                     return (
                       <button
                         key={String(item.value)}
                         type="button"
-                        onClick={() => handleCircleOptionChange(item.value)}
+                        onClick={() =>
+                          dispatch({
+                            type: 'configure',
+                            patch: { targetCount: item.value },
+                          })
+                        }
                         className={`cursor-pointer rounded-xl px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
                           active
                             ? 'bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/40'
@@ -1039,7 +562,7 @@ export default function App() {
             <Clock className="h-4 w-4 text-sky-400" />
             <span className="text-xs text-slate-400">Čas</span>
             <span className="font-mono text-sm font-semibold text-white">
-              {formatTime(game.elapsedSeconds)}
+              {formatTime(elapsedSeconds)}
             </span>
           </div>
 
@@ -1047,7 +570,7 @@ export default function App() {
             <Footprints className="h-4 w-4 text-sky-400" />
             <span className="text-xs text-slate-400">Kroky</span>
             <span className="font-mono text-sm font-semibold text-white">
-              {game.steps}
+              {steps}
             </span>
           </div>
 
@@ -1056,7 +579,7 @@ export default function App() {
               <CircleDot className="h-4 w-4 text-amber-400" />
               <span className="text-xs text-slate-400">Kolečka</span>
               <span className="font-mono text-sm font-semibold text-white">
-                {game.collected.size} / {totalTargets}
+                {collected.size} / {totalTargets}
               </span>
             </div>
           ) : (
@@ -1073,63 +596,60 @@ export default function App() {
 
         {/* Maze area */}
         <div
-          onPointerDown={handleMazePointerDown}
-          onPointerMove={handleMazePointerMove}
-          onPointerUp={handleMazePointerEnd}
-          onPointerCancel={handleMazePointerEnd}
+          {...drag}
           className={
             focusMode
               ? 'relative flex h-full w-full touch-none select-none justify-center cursor-grab active:cursor-grabbing'
               : 'relative flex w-full touch-none select-none justify-center cursor-grab active:cursor-grabbing'
           }
         >
-          {mazeStyle === 'classic' && (
+          {mazeStyle === 'classic' && gridRound && (
             <MazeCanvas
-              maze={game.gridMaze}
-              player={game.gridPlayer}
-              visited={game.visited}
-              trail={game.gridTrail}
+              maze={gridRound.board.maze}
+              player={playerOf(gridRound.run)}
+              visited={visited}
+              trail={gridRound.run.trail}
               hintPath={gridHintPath}
               aspectRatioId={aspectRatio.id}
               gameMode={gameMode}
-              targets={game.gridTargets}
-              collected={game.collected}
+              targets={gridRound.board.targets}
+              collected={collected}
               theme={theme}
               fullScreen={focusMode}
             />
           )}
 
-          {mazeStyle === 'curved' && (
+          {mazeStyle === 'curved' && gridRound && (
             <CurvedMazeSvg
-              maze={game.gridMaze}
-              player={game.gridPlayer}
-              trail={game.gridTrail}
+              maze={gridRound.board.maze}
+              player={playerOf(gridRound.run)}
+              trail={gridRound.run.trail}
               hintPath={gridHintPath}
               aspectRatioId={aspectRatio.id}
               gameMode={gameMode}
-              targets={game.gridTargets}
-              collected={game.collected}
+              targets={gridRound.board.targets}
+              collected={collected}
               theme={theme}
               fullScreen={focusMode}
             />
           )}
 
-          {mazeStyle === 'circular' && (
+          {mazeStyle === 'circular' && polarRound && (
             <CircularMazeSvg
-              maze={game.polarMaze}
-              playerId={game.polarPlayer}
-              visited={game.visited}
-              trail={game.polarTrail}
+              maze={polarRound.board.maze}
+              playerId={playerOf(polarRound.run)}
+              visited={visited}
+              trail={polarRound.run.trail}
               hintPath={polarHintPath}
               gameMode={gameMode}
-              targets={game.polarTargets}
-              collected={game.collected}
+              targets={polarRound.board.targets}
+              collected={collected}
               theme={theme}
               fullScreen={focusMode}
             />
           )}
 
-          {game.won && (
+          {won && (
             <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-slate-950/75 backdrop-blur-sm">
               <div className="mx-4 flex max-w-xs flex-col items-center rounded-2xl border border-emerald-500/40 bg-slate-900 p-6 text-center shadow-2xl">
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
@@ -1143,18 +663,16 @@ export default function App() {
                 <p className="mt-2 text-sm text-slate-300">
                   Čas:{' '}
                   <strong className="text-white">
-                    {formatTime(game.elapsedSeconds)}
+                    {formatTime(elapsedSeconds)}
                   </strong>{' '}
-                  · Kroky: <strong className="text-white">{game.steps}</strong>
+                  · Kroky: <strong className="text-white">{steps}</strong>
                   {gameMode === 'classic'
                     ? ` (optimum ${optimalSteps})`
                     : ` · Kolečka: ${totalTargets}/${totalTargets}`}
                 </p>
                 <button
                   type="button"
-                  onClick={() =>
-                    startNewMaze(preset, aspectRatio, mazeStyle, gameMode)
-                  }
+                  onClick={newMaze}
                   className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
                 >
                   <RefreshCw className="h-4 w-4" />

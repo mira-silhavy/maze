@@ -1,19 +1,12 @@
 import { useMemo } from 'react';
+import type { Round, Settings } from '../game/model';
 import { positionKey } from '../maze/generator';
-import {
-  hasPolarPassage,
-  polarCellId,
-  type PolarMaze,
-} from '../maze/polar';
-import type { GameMode, Maze, MazeStyle, Position } from '../maze/types';
+import { hasPolarPassage, polarCellId } from '../maze/polar';
+import type { Position } from '../maze/types';
 
 interface PrintableMazeSvgProps {
-  mazeStyle: MazeStyle;
-  gameMode: GameMode;
-  gridMaze: Maze;
-  polarMaze: PolarMaze;
-  gridTargets: Position[];
-  polarTargets: string[];
+  settings: Pick<Settings, 'style' | 'mode'>;
+  round: Round;
 }
 
 const CELL = 32;
@@ -61,15 +54,15 @@ function arcPath(radius: number, startAngle: number, endAngle: number): string {
   return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
 }
 
-export function PrintableMazeSvg({
-  mazeStyle,
-  gameMode,
-  gridMaze,
-  polarMaze,
-  gridTargets,
-  polarTargets,
-}: PrintableMazeSvgProps) {
+export function PrintableMazeSvg({ settings, round }: PrintableMazeSvgProps) {
+  const { style: mazeStyle, mode: gameMode } = settings;
+  const gridMaze = round.kind === 'grid' ? round.board.maze : null;
+  const gridTargets = round.kind === 'grid' ? round.board.targets : [];
+  const polarMaze = round.kind === 'polar' ? round.board.maze : null;
+  const polarTargets = round.kind === 'polar' ? round.board.targets : [];
+
   const gridWallD = useMemo(() => {
+    if (!gridMaze) return '';
     const parts: string[] = [];
     for (let r = 0; r < gridMaze.rows; r++) {
       for (let c = 0; c < gridMaze.cols; c++) {
@@ -88,6 +81,7 @@ export function PrintableMazeSvg({
   }, [gridMaze]);
 
   const curvedCorridorD = useMemo(() => {
+    if (!gridMaze) return '';
     const segments: string[] = [];
     for (let r = 0; r < gridMaze.rows; r++) {
       for (let c = 0; c < gridMaze.cols; c++) {
@@ -104,6 +98,7 @@ export function PrintableMazeSvg({
   }, [gridMaze]);
 
   const polarWallD = useMemo(() => {
+    if (!polarMaze) return '';
     const paths: string[] = [];
     for (const cell of polarMaze.cellList) {
       if (cell.ring === 0) continue;
@@ -137,11 +132,10 @@ export function PrintableMazeSvg({
     return paths.join(' ');
   }, [polarMaze, gameMode]);
 
-  const targetCount =
-    mazeStyle === 'circular' ? polarTargets.length : gridTargets.length;
-  const gridViewW = gridMaze.cols * CELL + PAD * 2;
-  const gridViewH = gridMaze.rows * CELL + PAD * 2;
-  const polarHalf = polarMaze.rings * RING_STEP + PAD;
+  const targetCount = round.board.targets.length;
+  const gridViewW = (gridMaze?.cols ?? 0) * CELL + PAD * 2;
+  const gridViewH = (gridMaze?.rows ?? 0) * CELL + PAD * 2;
+  const polarHalf = (polarMaze?.rings ?? 0) * RING_STEP + PAD;
 
   return (
     <div className="hidden print:flex print:h-[100vh] print:w-full print:flex-col print:items-center print:justify-between print:bg-white print:text-black">
@@ -159,7 +153,7 @@ export function PrintableMazeSvg({
       </div>
 
       <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-        {mazeStyle === 'classic' && (
+        {mazeStyle === 'classic' && gridMaze && (
           <svg
             viewBox={`0 0 ${gridViewW} ${gridViewH}`}
             className="h-full max-h-full w-full max-w-full"
@@ -226,7 +220,7 @@ export function PrintableMazeSvg({
           </svg>
         )}
 
-        {mazeStyle === 'curved' && (
+        {mazeStyle === 'curved' && gridMaze && (
           <svg
             viewBox={`0 0 ${gridViewW} ${gridViewH}`}
             className="h-full max-h-full w-full max-w-full"
@@ -308,7 +302,7 @@ export function PrintableMazeSvg({
           </svg>
         )}
 
-        {mazeStyle === 'circular' && (
+        {mazeStyle === 'circular' && polarMaze && (
           <svg
             viewBox={`${-polarHalf} ${-polarHalf} ${polarHalf * 2} ${polarHalf * 2}`}
             className="h-full max-h-full w-full max-w-full"
