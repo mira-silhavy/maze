@@ -316,6 +316,19 @@ export function CircularMaze({
     ? buildPolarLiveTipD(maze, trail, marbleBody)
     : '';
 
+  const joinClipPathD = useMemo(() => {
+    if (!marbleMode || trail.length < 3) return '';
+    const prevCell = maze.cells.get(trail[trail.length - 2]);
+    if (!prevCell) return '';
+    const cx = prevCell.x * RING_STEP;
+    const cy = prevCell.y * RING_STEP;
+    const r = 6.5 / 2;
+    return `M ${-halfExtent} ${-halfExtent} H ${halfExtent} V ${halfExtent} H ${-halfExtent} Z M ${(cx - r).toFixed(2)} ${cy.toFixed(2)} a ${r} ${r} 0 1 0 ${(r * 2).toFixed(2)} 0 a ${r} ${r} 0 1 0 ${(-r * 2).toFixed(2)} 0 Z`;
+  }, [marbleMode, trail, maze, halfExtent]);
+
+  const showOverlay = marbleMode && Boolean(marbleRef);
+  const trailOpacity = theme.isLight ? 0.85 : 0.8;
+
   const liveTipPathRef = useRef<SVGPathElement>(null);
   const fogLightCircleRef = useRef<SVGCircleElement>(null);
   const fogTintCircleRef = useRef<SVGCircleElement>(null);
@@ -363,205 +376,251 @@ export function CircularMaze({
           : `flex aspect-square max-h-[68vh] w-full max-w-[620px] items-center justify-center rounded-2xl border p-2 ${theme.containerClass}`
       }
     >
-      <svg
-        viewBox={viewBox}
-        className="h-full w-full rounded-xl"
-        role="img"
-        aria-label="Kruhové bludiště"
-      >
-        <defs>
-          <filter id="polar-glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
+      <div className="relative h-full w-full">
+        <svg
+          viewBox={viewBox}
+          preserveAspectRatio="xMidYMid meet"
+          className="h-full w-full rounded-xl"
+          role="img"
+          aria-label="Kruhové bludiště"
+        >
+          <defs>
+            <filter id="polar-glow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            {fogOfWar && (
+              <>
+                <radialGradient id="polar-fog-mem">
+                  <stop offset="0%" stopColor="black" stopOpacity="0.56" />
+                  <stop offset="100%" stopColor="black" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="polar-fog-light">
+                  <stop offset="0%" stopColor="black" stopOpacity="1" />
+                  <stop offset="64%" stopColor="black" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="black" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="polar-fog-tint">
+                  <stop offset="0%" stopColor={theme.lightTint} />
+                  <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+                </radialGradient>
+                <mask id="polar-fog-mask">
+                  <rect
+                    x={-halfExtent}
+                    y={-halfExtent}
+                    width={halfExtent * 2}
+                    height={halfExtent * 2}
+                    fill="white"
+                  />
+                  {exploredCells.map((cell) => (
+                    <circle
+                      key={`f-${cell.id}`}
+                      cx={cell.x * RING_STEP}
+                      cy={cell.y * RING_STEP}
+                      r={RING_STEP * 1.65}
+                      fill="url(#polar-fog-mem)"
+                    />
+                  ))}
+                  <circle
+                    ref={fogLightCircleRef}
+                    cx={activeX}
+                    cy={activeY}
+                    r={RING_STEP * 2.8}
+                    fill="url(#polar-fog-light)"
+                  />
+                </mask>
+              </>
+            )}
+          </defs>
+
+          {/* Circular floor */}
+          <circle
+            cx="0"
+            cy="0"
+            r={maxRadius}
+            fill={theme.corridorFloor}
+            fillOpacity={CORRIDOR_FLOOR_OPACITY}
+          />
+
+          {/* Visited cells (single combined path) */}
+          {visitedWedgeD && <path d={visitedWedgeD} fill={theme.visitedFill} />}
+
+          {/* Committed pencil line */}
+          {staticPencilPathD && (
+            <path
+              d={staticPencilPathD}
+              fill="none"
+              stroke={theme.pencilLine}
+              strokeWidth="6.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={trailOpacity}
+            />
+          )}
+
+          {/* Hint path */}
+          {hintPathD && (
+            <path
+              d={hintPathD}
+              fill="none"
+              stroke={theme.hintStroke}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 8"
+              opacity="0.9"
+            />
+          )}
+
+          {/* Start marker */}
+          {gameMode === 'collect' ? (
+            <g
+              transform={`translate(${(startCell.x * RING_STEP).toFixed(2)} ${(startCell.y * RING_STEP).toFixed(2)})`}
+              stroke={theme.startCross}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+            >
+              <line x1="-8" y1="-8" x2="8" y2="8" />
+              <line x1="8" y1="-8" x2="-8" y2="8" />
+            </g>
+          ) : (
+            <circle
+              cx={startCell.x * RING_STEP}
+              cy={startCell.y * RING_STEP}
+              r="8"
+              fill={theme.startHighlight}
+            />
+          )}
+
+          {/* Goal(s) */}
+          {gameMode === 'classic' ? (
+            <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
+              <ThemedGoalSvg
+                x={endCell.x * RING_STEP}
+                y={endCell.y * RING_STEP}
+                r={9}
+                theme={theme}
+              />
+            </g>
+          ) : (
+            targets.map((targetId) => {
+              const cell = maze.cells.get(targetId);
+              if (!cell) return null;
+              const isCollected = collected.has(targetId);
+              const cx = cell.x * RING_STEP;
+              const cy = cell.y * RING_STEP;
+              return (
+                <ThemedTargetSvg
+                  key={targetId}
+                  x={cx}
+                  y={cy}
+                  r={8.5}
+                  theme={theme}
+                  collected={isCollected}
+                  glowFilter={theme.isLight ? undefined : 'url(#polar-glow)'}
+                />
+              );
+            })
+          )}
+
+          {/* Polar walls */}
+          <ThemedWallPathSvg
+            d={wallsPathD}
+            wallWidth={wallStroke}
+            theme={theme}
+            glowFilterId="polar-glow"
+          />
+
+          {/* Non-marble player */}
+          {!showOverlay && (
+            <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
+              <ThemedPlayerSvg
+                x={playerCell.x * RING_STEP}
+                y={playerCell.y * RING_STEP}
+                r={9.5}
+                theme={theme}
+              />
+            </g>
+          )}
+
+          {/* Fog of War + Flashlight */}
           {fogOfWar && (
             <>
-              <radialGradient id="polar-fog-mem">
-                <stop offset="0%" stopColor="black" stopOpacity="0.56" />
-                <stop offset="100%" stopColor="black" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="polar-fog-light">
-                <stop offset="0%" stopColor="black" stopOpacity="1" />
-                <stop offset="64%" stopColor="black" stopOpacity="0.9" />
-                <stop offset="100%" stopColor="black" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="polar-fog-tint">
-                <stop offset="0%" stopColor={theme.lightTint} />
-                <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-              </radialGradient>
-              <mask id="polar-fog-mask">
-                <rect
-                  x={-halfExtent}
-                  y={-halfExtent}
-                  width={halfExtent * 2}
-                  height={halfExtent * 2}
-                  fill="white"
-                />
-                {exploredCells.map((cell) => (
-                  <circle
-                    key={`f-${cell.id}`}
-                    cx={cell.x * RING_STEP}
-                    cy={cell.y * RING_STEP}
-                    r={RING_STEP * 1.65}
-                    fill="url(#polar-fog-mem)"
-                  />
-                ))}
-                <circle
-                  ref={fogLightCircleRef}
-                  cx={activeX}
-                  cy={activeY}
-                  r={RING_STEP * 2.8}
-                  fill="url(#polar-fog-light)"
-                />
-              </mask>
+              <rect
+                x={-halfExtent}
+                y={-halfExtent}
+                width={halfExtent * 2}
+                height={halfExtent * 2}
+                fill={theme.fogColor}
+                mask="url(#polar-fog-mask)"
+              />
+              <circle
+                ref={fogTintCircleRef}
+                cx={activeX}
+                cy={activeY}
+                r={RING_STEP * 2.8}
+                fill="url(#polar-fog-tint)"
+              />
             </>
           )}
-        </defs>
+        </svg>
 
-        {/* Circular floor */}
-        <circle
-          cx="0"
-          cy="0"
-          r={maxRadius}
-          fill={theme.corridorFloor}
-          fillOpacity={CORRIDOR_FLOOR_OPACITY}
-        />
-
-        {/* Visited cells (single combined path) */}
-        {visitedWedgeD && <path d={visitedWedgeD} fill={theme.visitedFill} />}
-
-        {/* Continuous pencil line (group opacity keeps the history/tip join seamless) */}
-        {(staticPencilPathD || marbleMode) && (
-          <g
-            fill="none"
-            stroke={theme.pencilLine}
-            strokeWidth="6.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={theme.isLight ? 0.85 : 0.8}
+        {showOverlay && marbleRef && (
+          <svg
+            viewBox={viewBox}
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full rounded-xl"
+            style={{ willChange: 'transform' }}
           >
-            {staticPencilPathD && <path d={staticPencilPathD} />}
-            {marbleMode && <path ref={liveTipPathRef} d={initialLiveTipD} />}
-          </g>
-        )}
+            <defs>
+              <filter
+                id="polar-overlay-glow"
+                x="-40%"
+                y="-40%"
+                width="180%"
+                height="180%"
+              >
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              {joinClipPathD && (
+                <clipPath id="polar-tip-join-clip">
+                  <path d={joinClipPathD} clipRule="evenodd" />
+                </clipPath>
+              )}
+            </defs>
 
-        {/* Hint path */}
-        {hintPathD && (
-          <path
-            d={hintPathD}
-            fill="none"
-            stroke={theme.hintStroke}
-            strokeWidth="4.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="6 8"
-            opacity="0.9"
-          />
-        )}
-
-        {/* Start marker */}
-        {gameMode === 'collect' ? (
-          <g
-            transform={`translate(${(startCell.x * RING_STEP).toFixed(2)} ${(startCell.y * RING_STEP).toFixed(2)})`}
-            stroke={theme.startCross}
-            strokeWidth="4.5"
-            strokeLinecap="round"
-          >
-            <line x1="-8" y1="-8" x2="8" y2="8" />
-            <line x1="8" y1="-8" x2="-8" y2="8" />
-          </g>
-        ) : (
-          <circle
-            cx={startCell.x * RING_STEP}
-            cy={startCell.y * RING_STEP}
-            r="8"
-            fill={theme.startHighlight}
-          />
-        )}
-
-        {/* Goal(s) */}
-        {gameMode === 'classic' ? (
-          <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
-            <ThemedGoalSvg
-              x={endCell.x * RING_STEP}
-              y={endCell.y * RING_STEP}
-              r={9}
-              theme={theme}
+            <path
+              ref={liveTipPathRef}
+              d={initialLiveTipD}
+              fill="none"
+              stroke={theme.pencilLine}
+              strokeWidth="6.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={trailOpacity}
+              clipPath={joinClipPathD ? 'url(#polar-tip-join-clip)' : undefined}
             />
-          </g>
-        ) : (
-          targets.map((targetId) => {
-            const cell = maze.cells.get(targetId);
-            if (!cell) return null;
-            const isCollected = collected.has(targetId);
-            const cx = cell.x * RING_STEP;
-            const cy = cell.y * RING_STEP;
-            return (
-              <ThemedTargetSvg
-                key={targetId}
-                x={cx}
-                y={cy}
-                r={8.5}
+
+            <g filter={theme.isLight ? undefined : 'url(#polar-overlay-glow)'}>
+              <LivePolarMarble
+                fallbackX={playerCell.x * RING_STEP}
+                fallbackY={playerCell.y * RING_STEP}
                 theme={theme}
-                collected={isCollected}
-                glowFilter={theme.isLight ? undefined : 'url(#polar-glow)'}
+                marbleRef={marbleRef}
+                registerTick={registerMarbleTick}
               />
-            );
-          })
+            </g>
+          </svg>
         )}
-
-        {/* Polar walls */}
-        <ThemedWallPathSvg
-          d={wallsPathD}
-          wallWidth={wallStroke}
-          theme={theme}
-          glowFilterId="polar-glow"
-        />
-
-        {/* Player */}
-        <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
-          {marbleMode && marbleRef ? (
-            <LivePolarMarble
-              fallbackX={playerCell.x * RING_STEP}
-              fallbackY={playerCell.y * RING_STEP}
-              theme={theme}
-              marbleRef={marbleRef}
-              registerTick={registerMarbleTick}
-            />
-          ) : (
-            <ThemedPlayerSvg
-              x={playerCell.x * RING_STEP}
-              y={playerCell.y * RING_STEP}
-              r={9.5}
-              theme={theme}
-            />
-          )}
-        </g>
-
-        {/* Fog of War + Flashlight */}
-        {fogOfWar && (
-          <>
-            <rect
-              x={-halfExtent}
-              y={-halfExtent}
-              width={halfExtent * 2}
-              height={halfExtent * 2}
-              fill={theme.fogColor}
-              mask="url(#polar-fog-mask)"
-            />
-            <circle
-              ref={fogTintCircleRef}
-              cx={activeX}
-              cy={activeY}
-              r={RING_STEP * 2.8}
-              fill="url(#polar-fog-tint)"
-            />
-          </>
-        )}
-      </svg>
+      </div>
     </div>
   );
 }

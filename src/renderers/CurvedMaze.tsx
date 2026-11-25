@@ -444,8 +444,19 @@ export function CurvedMaze({
         )?.cell ?? null
       : null;
 
+  const joinClipPathD = useMemo(() => {
+    if (!marbleMode || trail.length < 3) return '';
+    const joinPt = nodeCenter(trail[trail.length - 2]);
+    const r = (CELL_UNIT * 0.2) / 2;
+    return `M 0 0 H ${viewWidth} V ${viewHeight} H 0 Z M ${(joinPt.x - r).toFixed(2)} ${joinPt.y.toFixed(2)} a ${r} ${r} 0 1 0 ${(r * 2).toFixed(2)} 0 a ${r} ${r} 0 1 0 ${(-r * 2).toFixed(2)} 0 Z`;
+  }, [marbleMode, trail, viewWidth, viewHeight]);
+
+  const underMarble = effectiveLevel === 'under';
+  const showOverlay = marbleMode && Boolean(marbleRef);
+  const useOverlayTip = showOverlay && !underMarble;
+
   const liveTipPathRef = useRef<SVGPathElement>(null);
-  const liveBridgeTipPathRef = useRef<SVGPathElement>(null);
+  const boardLiveTipPathRef = useRef<SVGPathElement>(null);
   const fogLightCircleRef = useRef<SVGCircleElement>(null);
   const fogTintCircleRef = useRef<SVGCircleElement>(null);
   const underGroupRef = useRef<SVGGElement>(null);
@@ -458,7 +469,6 @@ export function CurvedMaze({
     const lastTrailPos = trail[trail.length - 1];
     return bridgeItems.map((item) => {
       const overTrails = pathThrough(trail, item.cell, 'over');
-      let livePart: Position[] | null = null;
       const staticPartsD: string[] = [];
       for (const part of overTrails) {
         const isLiveEnd =
@@ -466,7 +476,6 @@ export function CurvedMaze({
           part.length >= 2 &&
           part[part.length - 1] === lastTrailPos;
         if (isLiveEnd) {
-          livePart = part;
           const prefixD = buildCurvedStaticSegmentsD(part, part.length - 2);
           if (prefixD) staticPartsD.push(prefixD);
         } else {
@@ -480,34 +489,23 @@ export function CurvedMaze({
       return {
         ...item,
         staticTrailD: staticPartsD.join(' '),
-        livePart,
         hintPartsD,
       };
     });
   }, [bridgeItems, trail, hintPath, marbleMode]);
-
-  const liveBridgePart = useMemo(
-    () => bridgeOverlays.find((b) => b.livePart !== null)?.livePart ?? null,
-    [bridgeOverlays],
-  );
 
   const updateLiveDomRef = useRef<() => void>(() => {});
   updateLiveDomRef.current = () => {
     if (!marbleMode || !marbleRef) return;
     const body = marbleRef.current;
     const pt = curvedPointFromGrid(body.x, body.y, maze.rows, maze.cols);
+    const tipD = buildCurvedLiveTipD(maze, trail, body);
 
     if (liveTipPathRef.current) {
-      liveTipPathRef.current.setAttribute(
-        'd',
-        buildCurvedLiveTipD(maze, trail, body),
-      );
+      liveTipPathRef.current.setAttribute('d', tipD);
     }
-    if (liveBridgeTipPathRef.current && liveBridgePart) {
-      liveBridgeTipPathRef.current.setAttribute(
-        'd',
-        buildCurvedLiveTipD(maze, liveBridgePart, body),
-      );
+    if (boardLiveTipPathRef.current) {
+      boardLiveTipPathRef.current.setAttribute('d', tipD);
     }
     if (fogLightCircleRef.current) {
       fogLightCircleRef.current.setAttribute('cx', pt.x.toFixed(2));
@@ -558,254 +556,304 @@ export function CurvedMaze({
           : `flex max-h-[68vh] w-full ${CONTAINER_MAX_WIDTH[aspectRatioId]} items-center justify-center rounded-2xl border p-2 ${theme.containerClass}`
       }
     >
-      <svg
-        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-        className="h-full w-full rounded-xl"
-        role="img"
-        aria-label="Křivkové bludiště"
-      >
-        <defs>
-          <filter id="curved-glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          {bridgeItems.map((item) => (
-            <clipPath
-              key={item.key}
-              id={`curved-bridge-${item.cell.row}-${item.cell.col}`}
-            >
-              <rect
-                x={item.clipX}
-                y={item.clipY}
-                width={item.clipW}
-                height={item.clipH}
-              />
-            </clipPath>
-          ))}
-          {fogOfWar && (
-            <>
-              <radialGradient id="curved-fog-mem">
-                <stop offset="0%" stopColor="black" stopOpacity="0.56" />
-                <stop offset="100%" stopColor="black" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="curved-fog-light">
-                <stop offset="0%" stopColor="black" stopOpacity="1" />
-                <stop offset="64%" stopColor="black" stopOpacity="0.9" />
-                <stop offset="100%" stopColor="black" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="curved-fog-tint">
-                <stop offset="0%" stopColor={theme.lightTint} />
-                <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-              </radialGradient>
-              <mask id="curved-fog-mask">
-                <rect x="0" y="0" width={viewWidth} height={viewHeight} fill="white" />
-                {exploredCenters.map((pt) => (
-                  <circle
-                    key={pt.key}
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={CELL_UNIT * 1.65}
-                    fill="url(#curved-fog-mem)"
-                  />
-                ))}
-                <circle
-                  ref={fogLightCircleRef}
-                  cx={initialPos.x}
-                  cy={initialPos.y}
-                  r={CELL_UNIT * 2.8}
-                  fill="url(#curved-fog-light)"
+      <div className="relative h-full w-full">
+        <svg
+          viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="h-full w-full rounded-xl"
+          role="img"
+          aria-label="Křivkové bludiště"
+        >
+          <defs>
+            <filter id="curved-glow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            {bridgeItems.map((item) => (
+              <clipPath
+                key={item.key}
+                id={`curved-bridge-${item.cell.row}-${item.cell.col}`}
+              >
+                <rect
+                  x={item.clipX}
+                  y={item.clipY}
+                  width={item.clipW}
+                  height={item.clipH}
                 />
-              </mask>
-            </>
-          )}
-        </defs>
+              </clipPath>
+            ))}
+            {fogOfWar && (
+              <>
+                <radialGradient id="curved-fog-mem">
+                  <stop offset="0%" stopColor="black" stopOpacity="0.56" />
+                  <stop offset="100%" stopColor="black" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="curved-fog-light">
+                  <stop offset="0%" stopColor="black" stopOpacity="1" />
+                  <stop offset="64%" stopColor="black" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="black" stopOpacity="0" />
+                </radialGradient>
+                <radialGradient id="curved-fog-tint">
+                  <stop offset="0%" stopColor={theme.lightTint} />
+                  <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+                </radialGradient>
+                <mask id="curved-fog-mask">
+                  <rect x="0" y="0" width={viewWidth} height={viewHeight} fill="white" />
+                  {exploredCenters.map((pt) => (
+                    <circle
+                      key={pt.key}
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={CELL_UNIT * 1.65}
+                      fill="url(#curved-fog-mem)"
+                    />
+                  ))}
+                  <circle
+                    ref={fogLightCircleRef}
+                    cx={initialPos.x}
+                    cy={initialPos.y}
+                    r={CELL_UNIT * 2.8}
+                    fill="url(#curved-fog-light)"
+                  />
+                </mask>
+              </>
+            )}
+          </defs>
 
-        {/* Corridor tube (themed outer wall + inner floor) */}
-        <ThemedCorridorTubeSvg
-          d={corridorPathD}
-          outerWidth={CELL_UNIT * 0.72}
-          innerWidth={CELL_UNIT * 0.54}
-          theme={theme}
-          glowFilterId="curved-glow"
-          maskBounds={corridorMaskBounds}
-        />
-
-        {/* Continuous pencil line (group opacity keeps the history/tip join seamless) */}
-        {(staticTrailD || marbleMode) && (
-          <g
-            fill="none"
-            stroke={theme.pencilLine}
-            strokeWidth={CELL_UNIT * 0.2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={trailOpacity}
-          >
-            {staticTrailD && <path d={staticTrailD} />}
-            {marbleMode && <path ref={liveTipPathRef} d={initialLiveTipD} />}
-          </g>
-        )}
-
-        {/* Hint path */}
-        {hintPathD && (
-          <path
-            d={hintPathD}
-            fill="none"
-            stroke={theme.hintStroke}
-            strokeWidth={CELL_UNIT * 0.14}
-            strokeLinecap="round"
-            strokeDasharray="6 8"
-            opacity="0.9"
+          {/* Corridor tube (themed outer wall + inner floor) */}
+          <ThemedCorridorTubeSvg
+            d={corridorPathD}
+            outerWidth={CELL_UNIT * 0.72}
+            innerWidth={CELL_UNIT * 0.54}
+            theme={theme}
+            glowFilterId="curved-glow"
+            maskBounds={corridorMaskBounds}
           />
-        )}
 
-        {bridgeOverlays.map((item) => {
-          const { cell, key, deck, corners, maskBounds, staticTrailD: bridgeStaticD, livePart, hintPartsD } = item;
-          const isUnder =
-            effectiveLevel === 'under' &&
-            effectiveRow === cell.row &&
-            effectiveCol === cell.col;
-          const initialBridgeLiveD =
-            livePart && marbleBody
-              ? buildCurvedLiveTipD(maze, livePart, marbleBody)
-              : '';
-          return (
+          {/* Committed pencil line (and board-side live tip only while passing under a bridge) */}
+          {(staticTrailD || (marbleMode && underMarble)) && (
             <g
-              key={key}
               fill="none"
+              stroke={theme.pencilLine}
+              strokeWidth={CELL_UNIT * 0.2}
               strokeLinecap="round"
               strokeLinejoin="round"
+              opacity={trailOpacity}
             >
-              <ThemedCurvedBridgeBaseSvg
-                deck={deck}
-                cellUnit={CELL_UNIT}
-                theme={theme}
-              />
-              <g clipPath={`url(#curved-bridge-${cell.row}-${cell.col})`}>
-                {(bridgeStaticD || livePart) && (
-                  <g
-                    stroke={theme.pencilLine}
-                    strokeWidth={CELL_UNIT * 0.2}
-                    opacity={trailOpacity}
-                  >
-                    {bridgeStaticD && <path d={bridgeStaticD} />}
-                    {livePart && (
-                      <path ref={liveBridgeTipPathRef} d={initialBridgeLiveD} />
-                    )}
-                  </g>
-                )}
-                {hintPartsD.map((d, i) => (
-                  <path
-                    key={i}
-                    d={d}
-                    stroke={theme.hintStroke}
-                    strokeWidth={CELL_UNIT * 0.14}
-                    strokeDasharray="6 8"
-                    opacity="0.9"
-                  />
-                ))}
-                {isUnder && (
-                  <g
-                    ref={underGroupRef}
-                    opacity={
-                      marbleBody ? underOpacityForCell(cell, marbleBody) : 0.55
-                    }
-                  >
-                    {playerMarker}
-                  </g>
-                )}
+              {staticTrailD && <path d={staticTrailD} />}
+              {marbleMode && underMarble && (
+                <path ref={boardLiveTipPathRef} d={initialLiveTipD} />
+              )}
+            </g>
+          )}
+
+          {/* Hint path */}
+          {hintPathD && (
+            <path
+              d={hintPathD}
+              fill="none"
+              stroke={theme.hintStroke}
+              strokeWidth={CELL_UNIT * 0.14}
+              strokeLinecap="round"
+              strokeDasharray="6 8"
+              opacity="0.9"
+            />
+          )}
+
+          {bridgeOverlays.map((item) => {
+            const { cell, key, deck, corners, maskBounds, staticTrailD: bridgeStaticD, hintPartsD } = item;
+            const isUnder =
+              underMarble &&
+              effectiveRow === cell.row &&
+              effectiveCol === cell.col;
+            return (
+              <g
+                key={key}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <ThemedCurvedBridgeBaseSvg
+                  deck={deck}
+                  cellUnit={CELL_UNIT}
+                  theme={theme}
+                />
+                <g clipPath={`url(#curved-bridge-${cell.row}-${cell.col})`}>
+                  {bridgeStaticD && (
+                    <path
+                      d={bridgeStaticD}
+                      stroke={theme.pencilLine}
+                      strokeWidth={CELL_UNIT * 0.2}
+                      opacity={trailOpacity}
+                    />
+                  )}
+                  {hintPartsD.map((d, i) => (
+                    <path
+                      key={i}
+                      d={d}
+                      stroke={theme.hintStroke}
+                      strokeWidth={CELL_UNIT * 0.14}
+                      strokeDasharray="6 8"
+                      opacity="0.9"
+                    />
+                  ))}
+                  {isUnder && (
+                    <g
+                      ref={underGroupRef}
+                      opacity={
+                        marbleBody ? underOpacityForCell(cell, marbleBody) : 0.55
+                      }
+                    >
+                      {playerMarker}
+                    </g>
+                  )}
+                </g>
+                <ThemedCurvedBridgeOverlaySvg
+                  deck={deck}
+                  corners={corners}
+                  cellUnit={CELL_UNIT}
+                  theme={theme}
+                  glowFilterId="curved-glow"
+                  maskBounds={maskBounds}
+                />
               </g>
-              <ThemedCurvedBridgeOverlaySvg
-                deck={deck}
-                corners={corners}
-                cellUnit={CELL_UNIT}
-                theme={theme}
-                glowFilterId="curved-glow"
-                maskBounds={maskBounds}
+            );
+          })}
+
+          {/* Start marker */}
+          {gameMode === 'collect' ? (
+            <g stroke={theme.startCross} strokeWidth="4.5" strokeLinecap="round">
+              <line
+                x1={startPos.x - 8}
+                y1={startPos.y - 8}
+                x2={startPos.x + 8}
+                y2={startPos.y + 8}
+              />
+              <line
+                x1={startPos.x + 8}
+                y1={startPos.y - 8}
+                x2={startPos.x - 8}
+                y2={startPos.y + 8}
               />
             </g>
-          );
-        })}
-
-        {/* Start marker */}
-        {gameMode === 'collect' ? (
-          <g stroke={theme.startCross} strokeWidth="4.5" strokeLinecap="round">
-            <line
-              x1={startPos.x - 8}
-              y1={startPos.y - 8}
-              x2={startPos.x + 8}
-              y2={startPos.y + 8}
-            />
-            <line
-              x1={startPos.x + 8}
-              y1={startPos.y - 8}
-              x2={startPos.x - 8}
-              y2={startPos.y + 8}
-            />
-          </g>
-        ) : (
-          <circle
-            cx={startPos.x}
-            cy={startPos.y}
-            r="7"
-            fill={theme.startHighlight}
-          />
-        )}
-
-        {/* Goal(s) */}
-        {gameMode === 'classic' ? (
-          <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
-            <ThemedGoalSvg x={endPos.x} y={endPos.y} r={9.5} theme={theme} />
-          </g>
-        ) : (
-          targets.map((target) => {
-            const key = positionKey(target);
-            const isCollected = collected.has(key);
-            const pt = nodeCenter(target);
-            return (
-              <ThemedTargetSvg
-                key={key}
-                x={pt.x}
-                y={pt.y}
-                r={9.5}
-                theme={theme}
-                collected={isCollected}
-                glowFilter={theme.isLight ? undefined : 'url(#curved-glow)'}
-              />
-            );
-          })
-        )}
-
-        {/* Player */}
-        {effectiveLevel !== 'under' && (
-          <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
-            {playerMarker}
-          </g>
-        )}
-
-        {/* Fog of War + Flashlight */}
-        {fogOfWar && (
-          <>
-            <rect
-              x="0"
-              y="0"
-              width={viewWidth}
-              height={viewHeight}
-              fill={theme.fogColor}
-              mask="url(#curved-fog-mask)"
-            />
+          ) : (
             <circle
-              ref={fogTintCircleRef}
-              cx={initialPos.x}
-              cy={initialPos.y}
-              r={CELL_UNIT * 2.8}
-              fill="url(#curved-fog-tint)"
+              cx={startPos.x}
+              cy={startPos.y}
+              r="7"
+              fill={theme.startHighlight}
             />
-          </>
+          )}
+
+          {/* Goal(s) */}
+          {gameMode === 'classic' ? (
+            <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
+              <ThemedGoalSvg x={endPos.x} y={endPos.y} r={9.5} theme={theme} />
+            </g>
+          ) : (
+            targets.map((target) => {
+              const key = positionKey(target);
+              const isCollected = collected.has(key);
+              const pt = nodeCenter(target);
+              return (
+                <ThemedTargetSvg
+                  key={key}
+                  x={pt.x}
+                  y={pt.y}
+                  r={9.5}
+                  theme={theme}
+                  collected={isCollected}
+                  glowFilter={theme.isLight ? undefined : 'url(#curved-glow)'}
+                />
+              );
+            })
+          )}
+
+          {/* Non-marble player */}
+          {!showOverlay && !underMarble && (
+            <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
+              {playerMarker}
+            </g>
+          )}
+
+          {/* Fog of War + Flashlight */}
+          {fogOfWar && (
+            <>
+              <rect
+                x="0"
+                y="0"
+                width={viewWidth}
+                height={viewHeight}
+                fill={theme.fogColor}
+                mask="url(#curved-fog-mask)"
+              />
+              <circle
+                ref={fogTintCircleRef}
+                cx={initialPos.x}
+                cy={initialPos.y}
+                r={CELL_UNIT * 2.8}
+                fill="url(#curved-fog-tint)"
+              />
+            </>
+          )}
+        </svg>
+
+        {showOverlay && (
+          <svg
+            viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full rounded-xl"
+            style={{ willChange: 'transform' }}
+          >
+            <defs>
+              <filter
+                id="curved-overlay-glow"
+                x="-40%"
+                y="-40%"
+                width="180%"
+                height="180%"
+              >
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              {joinClipPathD && (
+                <clipPath id="curved-tip-join-clip">
+                  <path d={joinClipPathD} clipRule="evenodd" />
+                </clipPath>
+              )}
+            </defs>
+
+            {useOverlayTip && (
+              <path
+                ref={liveTipPathRef}
+                d={initialLiveTipD}
+                fill="none"
+                stroke={theme.pencilLine}
+                strokeWidth={CELL_UNIT * 0.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={trailOpacity}
+                clipPath={
+                  joinClipPathD ? 'url(#curved-tip-join-clip)' : undefined
+                }
+              />
+            )}
+
+            {!underMarble && (
+              <g filter={theme.isLight ? undefined : 'url(#curved-overlay-glow)'}>
+                {playerMarker}
+              </g>
+            )}
+          </svg>
         )}
-      </svg>
+      </div>
     </div>
   );
 }
