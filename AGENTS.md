@@ -7,9 +7,9 @@ Guidelines for working on `maze-web` (React 19, TypeScript, Tailwind CSS v4, Vit
 - `npm run dev` — local Vite dev server
 - `npm test` — run Vitest unit tests (`vitest run`)
 - `npm run build` — typecheck (`tsc -b`) and build single-file bundle to `dist/index.html`
-- **Publishing to GitHub Pages**: after `npm run build`, copy `dist/index.html` to `docs/index.html` before committing.
+- **Publishing to GitHub Pages**: always copy the latest `dist/index.html` (after `npm run build`) to `docs/index.html` before committing and pushing.
 
-Always run `npm test` and `npm run build` before finishing a change.
+Run `npm test` and `npm run build` before finishing changes to application code, tests, dependencies, or build configuration. Skip both for documentation-only changes, including plans and other Markdown files, unless they also change build or test inputs. Do not regenerate `docs/index.html` for documentation-only changes.
 
 ## Architecture & Folder Boundaries
 

@@ -1,17 +1,20 @@
 import { RefreshCw, Trophy } from 'lucide-react';
-import type { GameState } from '../game/model';
+import type { Round, Settings } from '../game/model';
 import type { Dispatch } from '../game/useGame';
 import { getMessages } from '../i18n';
 import { formatTime } from './formatTime';
 
 export function WinOverlay({
-  state,
+  settings,
+  round,
+  elapsedSeconds,
   dispatch,
 }: {
-  state: GameState;
+  settings: Settings;
+  round: Round;
+  elapsedSeconds: number;
   dispatch: Dispatch;
 }) {
-  const { settings, round, elapsedSeconds } = state;
   const t = getMessages(settings.language);
   const story = t.stories[settings.themeId];
   const totalTargets = round.board.targets.length;

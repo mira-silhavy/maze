@@ -1,7 +1,14 @@
-import { useId } from 'react';
+import { memo, useId } from 'react';
 import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from './catalog';
 
-export function ThemedWallPathSvg({
+export interface SvgBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const ThemedWallPathSvg = memo(function ThemedWallPathSvg({
   d,
   wallWidth,
   theme,
@@ -113,20 +120,22 @@ export function ThemedWallPathSvg({
       strokeLinejoin="round"
     />
   );
-}
+});
 
-export function ThemedCorridorTubeSvg({
+export const ThemedCorridorTubeSvg = memo(function ThemedCorridorTubeSvg({
   d,
   outerWidth,
   innerWidth,
   theme,
   glowFilterId,
+  maskBounds,
 }: {
   d: string;
   outerWidth: number;
   innerWidth: number;
   theme: MazeTheme;
   glowFilterId?: string;
+  maskBounds: SvgBounds;
 }) {
   const { scene } = theme;
   const maskId = `corridor-hollow-${useId().replace(/:/g, '')}`;
@@ -254,12 +263,18 @@ export function ThemedCorridorTubeSvg({
         <mask
           id={maskId}
           maskUnits="userSpaceOnUse"
-          x="-10000"
-          y="-10000"
-          width="20000"
-          height="20000"
+          x={maskBounds.x}
+          y={maskBounds.y}
+          width={maskBounds.width}
+          height={maskBounds.height}
         >
-          <rect x="-10000" y="-10000" width="20000" height="20000" fill="white" />
+          <rect
+            x={maskBounds.x}
+            y={maskBounds.y}
+            width={maskBounds.width}
+            height={maskBounds.height}
+            fill="white"
+          />
           <path d={d} stroke="black" strokeWidth={innerWidth} />
         </mask>
       </defs>
@@ -273,7 +288,7 @@ export function ThemedCorridorTubeSvg({
       <g mask={`url(#${maskId})`}>{wallLayers}</g>
     </g>
   );
-}
+});
 
 export interface CurvedBridgeCorner {
   x: number;
@@ -282,7 +297,7 @@ export interface CurvedBridgeCorner {
   side: 1 | -1;
 }
 
-export function ThemedCurvedBridgeBaseSvg({
+export const ThemedCurvedBridgeBaseSvg = memo(function ThemedCurvedBridgeBaseSvg({
   deck,
   cellUnit,
   theme,
@@ -405,21 +420,24 @@ export function ThemedCurvedBridgeBaseSvg({
       {deckLayers}
     </g>
   );
-}
+});
 
-export function ThemedCurvedBridgeOverlaySvg({
-  deck,
-  corners,
-  cellUnit,
-  theme,
-  glowFilterId,
-}: {
-  deck: string;
-  corners: ReadonlyArray<CurvedBridgeCorner>;
-  cellUnit: number;
-  theme: MazeTheme;
-  glowFilterId?: string;
-}) {
+export const ThemedCurvedBridgeOverlaySvg = memo(
+  function ThemedCurvedBridgeOverlaySvg({
+    deck,
+    corners,
+    cellUnit,
+    theme,
+    glowFilterId,
+    maskBounds,
+  }: {
+    deck: string;
+    corners: ReadonlyArray<CurvedBridgeCorner>;
+    cellUnit: number;
+    theme: MazeTheme;
+    glowFilterId?: string;
+    maskBounds: SvgBounds;
+  }) {
   const { scene } = theme;
   const maskId = `curved-bridge-rails-${useId().replace(/:/g, '')}`;
   const deckW = cellUnit * 0.56;
@@ -553,12 +571,18 @@ export function ThemedCurvedBridgeOverlaySvg({
         <mask
           id={maskId}
           maskUnits="userSpaceOnUse"
-          x="-10000"
-          y="-10000"
-          width="20000"
-          height="20000"
+          x={maskBounds.x}
+          y={maskBounds.y}
+          width={maskBounds.width}
+          height={maskBounds.height}
         >
-          <rect x="-10000" y="-10000" width="20000" height="20000" fill="white" />
+          <rect
+            x={maskBounds.x}
+            y={maskBounds.y}
+            width={maskBounds.width}
+            height={maskBounds.height}
+            fill="white"
+          />
           <path d={deck} stroke="black" strokeWidth={deckW} />
         </mask>
       </defs>
@@ -567,4 +591,4 @@ export function ThemedCurvedBridgeOverlaySvg({
       {cornerMarkers}
     </g>
   );
-}
+});

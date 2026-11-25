@@ -1,18 +1,23 @@
-import { useMemo } from 'react';
-import type { Round, Settings } from '../game/model';
+import { memo, useMemo } from 'react';
+import type { Board, Settings } from '../game/model';
 import { getMessages } from '../i18n';
 import {
   bridgeNeighbors,
   corridorLinks,
   positionKey,
 } from '../maze/grid';
-import { hasPolarPassage, polarCellId } from '../maze/polar';
-import type { Cell, Position } from '../maze/types';
+import { hasPolarPassage, polarCellId, type PolarMaze } from '../maze/polar';
+import type { Cell, Maze, Position } from '../maze/types';
 
-interface PrintableMazeSvgProps {
-  settings: Pick<Settings, 'style' | 'mode' | 'language'>;
-  round: Round;
-}
+type PrintableBoard =
+  | { kind: 'grid'; board: Board<Maze, Position> }
+  | { kind: 'polar'; board: Board<PolarMaze, string> };
+
+type PrintableMazeSvgProps = PrintableBoard & {
+  style: Settings['style'];
+  mode: Settings['mode'];
+  language: Settings['language'];
+};
 
 const CELL = 32;
 const PAD = 20;
@@ -59,13 +64,15 @@ function arcPath(radius: number, startAngle: number, endAngle: number): string {
   return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
 }
 
-export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
-  const { style: mazeStyle, mode: gameMode, language } = settings;
+export const PrintableMaze = memo(function PrintableMaze(
+  props: PrintableMazeSvgProps,
+) {
+  const { style: mazeStyle, mode: gameMode, language } = props;
   const t = getMessages(language);
-  const gridMaze = round.kind === 'grid' ? round.board.maze : null;
-  const gridTargets = round.kind === 'grid' ? round.board.targets : [];
-  const polarMaze = round.kind === 'polar' ? round.board.maze : null;
-  const polarTargets = round.kind === 'polar' ? round.board.targets : [];
+  const gridMaze = props.kind === 'grid' ? props.board.maze : null;
+  const gridTargets = props.kind === 'grid' ? props.board.targets : [];
+  const polarMaze = props.kind === 'polar' ? props.board.maze : null;
+  const polarTargets = props.kind === 'polar' ? props.board.targets : [];
 
   const gridWallD = useMemo(() => {
     if (!gridMaze) return '';
@@ -134,7 +141,7 @@ export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
     return paths.join(' ');
   }, [polarMaze, gameMode]);
 
-  const targetCount = round.board.targets.length;
+  const targetCount = props.board.targets.length;
   const gridViewW = (gridMaze?.cols ?? 0) * CELL + PAD * 2;
   const gridViewH = (gridMaze?.rows ?? 0) * CELL + PAD * 2;
   const polarHalf = (polarMaze?.rings ?? 0) * RING_STEP + PAD;
@@ -391,7 +398,7 @@ export function PrintableMaze({ settings, round }: PrintableMazeSvgProps) {
       </div>
     </div>
   );
-}
+});
 
 function bridgePaths(cell: Cell): { deck: string; planks: string } {
   const [from, to] = bridgeNeighbors(cell);

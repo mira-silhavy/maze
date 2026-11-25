@@ -114,7 +114,7 @@ export const MAZE_THEMES: MazeTheme[] = [
       title: 'text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)]',
       subtitle: 'text-slate-300/90',
       panel:
-        'border-indigo-400/25 bg-[#0a0f22]/75 shadow-[0_10px_30px_rgba(2,6,23,0.4)] backdrop-blur-md',
+        'border-indigo-400/25 bg-[#0a0f22]/92 shadow-[0_10px_30px_rgba(2,6,23,0.4)] pointer-fine:bg-[#0a0f22]/75 pointer-fine:backdrop-blur-md',
       divider: 'border-slate-700/45',
       label: 'text-slate-400',
       pillIdle:
@@ -123,7 +123,7 @@ export const MAZE_THEMES: MazeTheme[] = [
         'bg-slate-800/65 text-slate-400 hover:bg-slate-700/85 hover:text-slate-200',
       pillDisabled: 'bg-slate-800/35 text-slate-600',
       statCard:
-        'border-indigo-400/20 bg-[#0a0f22]/70 backdrop-blur-md',
+        'border-indigo-400/20 bg-[#0a0f22]/90 pointer-fine:bg-[#0a0f22]/70 pointer-fine:backdrop-blur-md',
       statValue: 'text-white',
       kbd: 'bg-slate-800 text-slate-200',
     },
@@ -172,7 +172,7 @@ export const MAZE_THEMES: MazeTheme[] = [
       title: 'text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)]',
       subtitle: 'text-cyan-100/75',
       panel:
-        'border-cyan-400/25 bg-[#040f1e]/75 shadow-[0_10px_30px_rgba(2,6,23,0.4)] backdrop-blur-md',
+        'border-cyan-400/25 bg-[#040f1e]/92 shadow-[0_10px_30px_rgba(2,6,23,0.4)] pointer-fine:bg-[#040f1e]/75 pointer-fine:backdrop-blur-md',
       divider: 'border-cyan-900/50',
       label: 'text-slate-400',
       pillIdle:
@@ -181,7 +181,7 @@ export const MAZE_THEMES: MazeTheme[] = [
         'bg-slate-800/65 text-slate-400 hover:bg-slate-700/85 hover:text-slate-200',
       pillDisabled: 'bg-slate-800/35 text-slate-600',
       statCard:
-        'border-cyan-400/20 bg-[#040f1e]/70 backdrop-blur-md',
+        'border-cyan-400/20 bg-[#040f1e]/90 pointer-fine:bg-[#040f1e]/70 pointer-fine:backdrop-blur-md',
       statValue: 'text-white',
       kbd: 'bg-slate-800 text-slate-200',
     },
@@ -230,7 +230,7 @@ export const MAZE_THEMES: MazeTheme[] = [
       title: 'text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)]',
       subtitle: 'text-emerald-100/75',
       panel:
-        'border-emerald-400/25 bg-[#052012]/75 shadow-[0_10px_30px_rgba(2,18,9,0.45)] backdrop-blur-md',
+        'border-emerald-400/25 bg-[#052012]/92 shadow-[0_10px_30px_rgba(2,18,9,0.45)] pointer-fine:bg-[#052012]/75 pointer-fine:backdrop-blur-md',
       divider: 'border-emerald-800/50',
       label: 'text-emerald-200/70',
       pillIdle:
@@ -239,7 +239,7 @@ export const MAZE_THEMES: MazeTheme[] = [
         'bg-emerald-950/60 text-emerald-300/60 hover:bg-emerald-900/80 hover:text-emerald-100',
       pillDisabled: 'bg-emerald-950/35 text-emerald-700',
       statCard:
-        'border-emerald-400/20 bg-[#052012]/70 backdrop-blur-md',
+        'border-emerald-400/20 bg-[#052012]/90 pointer-fine:bg-[#052012]/70 pointer-fine:backdrop-blur-md',
       statValue: 'text-white',
       kbd: 'bg-emerald-950 text-emerald-100',
     },
@@ -289,7 +289,7 @@ export const MAZE_THEMES: MazeTheme[] = [
       title: 'text-amber-950',
       subtitle: 'text-amber-900/80',
       panel:
-        'border-amber-900/25 bg-[#fdf6e3]/75 shadow-[0_8px_28px_rgba(69,26,3,0.08)] backdrop-blur-md',
+        'border-amber-900/25 bg-[#fdf6e3]/94 shadow-[0_8px_28px_rgba(69,26,3,0.08)] pointer-fine:bg-[#fdf6e3]/75 pointer-fine:backdrop-blur-md',
       divider: 'border-amber-900/15',
       label: 'text-amber-900/75',
       pillIdle:
@@ -298,7 +298,7 @@ export const MAZE_THEMES: MazeTheme[] = [
         'bg-amber-900/10 text-amber-900/60 hover:bg-amber-900/20 hover:text-amber-950',
       pillDisabled: 'bg-amber-900/5 text-amber-900/35',
       statCard:
-        'border-amber-900/20 bg-[#fdf6e3]/70 backdrop-blur-md',
+        'border-amber-900/20 bg-[#fdf6e3]/92 pointer-fine:bg-[#fdf6e3]/70 pointer-fine:backdrop-blur-md',
       statValue: 'text-amber-950',
       kbd: 'bg-amber-900/15 text-amber-950',
     },
@@ -347,7 +347,7 @@ export const MAZE_THEMES: MazeTheme[] = [
       title: 'text-slate-900',
       subtitle: 'text-slate-600',
       panel:
-        'border-slate-900/15 bg-white/80 shadow-[0_8px_28px_rgba(15,23,42,0.07)] backdrop-blur-md',
+        'border-slate-900/15 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.07)] pointer-fine:bg-white/80 pointer-fine:backdrop-blur-md',
       divider: 'border-slate-900/10',
       label: 'text-slate-500',
       pillIdle:
@@ -356,7 +356,7 @@ export const MAZE_THEMES: MazeTheme[] = [
         'bg-slate-900/5 text-slate-500 hover:bg-slate-900/12 hover:text-slate-800',
       pillDisabled: 'bg-slate-900/[0.03] text-slate-400',
       statCard:
-        'border-slate-900/12 bg-white/75 backdrop-blur-md',
+        'border-slate-900/12 bg-white/92 pointer-fine:bg-white/75 pointer-fine:backdrop-blur-md',
       statValue: 'text-slate-900',
       kbd: 'bg-slate-900/10 text-slate-800',
     },

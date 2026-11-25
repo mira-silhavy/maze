@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useFullscreenFocus } from './game/fullscreen';
 import { useKeyboard } from './game/input';
 import { phase } from './game/reduce';
@@ -16,6 +16,7 @@ import { StatsRow } from './ui/StatsRow';
 export default function App() {
   const { state, dispatch } = useGame();
   const theme = getThemeById(state.settings.themeId);
+  const won = phase(state) === 'won';
   useEffect(() => {
     const t = getMessages(state.settings.language);
     document.documentElement.lang = state.settings.language;
@@ -30,9 +31,10 @@ export default function App() {
     setFocusMode,
     toggleBrowserFullscreen,
   } = useFullscreenFocus();
+  const handleEnterFocus = useCallback(() => enterFocus(true), [enterFocus]);
   useKeyboard(
     dispatch,
-    phase(state) === 'won',
+    won,
     focusMode,
     setFocusMode,
     state.settings.marbleMode,
@@ -40,7 +42,23 @@ export default function App() {
 
   return (
     <>
-      <PrintableMaze settings={state.settings} round={state.round} />
+      {state.round.kind === 'grid' ? (
+        <PrintableMaze
+          kind="grid"
+          board={state.round.board}
+          style={state.settings.style}
+          mode={state.settings.mode}
+          language={state.settings.language}
+        />
+      ) : (
+        <PrintableMaze
+          kind="polar"
+          board={state.round.board}
+          style={state.settings.style}
+          mode={state.settings.mode}
+          language={state.settings.language}
+        />
+      )}
       <PageBackdrop theme={theme} />
 
       <div
@@ -52,7 +70,10 @@ export default function App() {
       >
         {focusMode ? (
           <FocusToolbar
-            state={state}
+            settings={state.settings}
+            collectedCount={state.round.run.collected.size}
+            totalTargets={state.round.board.targets.length}
+            showHint={state.showHint}
             dispatch={dispatch}
             onExit={exitFocus}
             browserFullscreen={browserFullscreen}
@@ -72,13 +93,23 @@ export default function App() {
         >
           {!focusMode && (
             <SettingsPanel
-              state={state}
+              settings={state.settings}
+              roundKind={state.round.kind}
+              showHint={state.showHint}
               dispatch={dispatch}
-              onEnterFocus={() => enterFocus(true)}
+              onEnterFocus={handleEnterFocus}
             />
           )}
           {!focusMode && <StatsRow state={state} />}
-          <MazeStage state={state} dispatch={dispatch} fullScreen={focusMode} />
+          <MazeStage
+            settings={state.settings}
+            round={state.round}
+            showHint={state.showHint}
+            won={won}
+            winElapsedSeconds={won ? state.elapsedSeconds : 0}
+            dispatch={dispatch}
+            fullScreen={focusMode}
+          />
         </main>
       </div>
     </>

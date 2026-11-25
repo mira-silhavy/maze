@@ -56,6 +56,7 @@ export function useTiltInput(enabled: boolean) {
   const rawAnglesRef = useRef<{ beta: number; gamma: number } | null>(null);
   const zeroRef = useRef<{ beta: number; gamma: number } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
+  const hasGyroRef = useRef(false);
 
   const [hasGyro, setHasGyro] = useState(false);
   const [permission, setPermission] = useState<TiltPermission>(() => {
@@ -151,7 +152,10 @@ export function useTiltInput(enabled: boolean) {
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.beta === null || event.gamma === null) return;
-      setHasGyro(true);
+      if (!hasGyroRef.current) {
+        hasGyroRef.current = true;
+        setHasGyro(true);
+      }
       rawAnglesRef.current = { beta: event.beta, gamma: event.gamma };
 
       // Auto-calibrate gently on first reading so holding the tablet at a natural angle feels neutral

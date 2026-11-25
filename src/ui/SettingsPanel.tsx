@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import {
   CircleDot,
   CircleHelp,
@@ -24,7 +24,7 @@ import {
   Trees,
   type LucideIcon,
 } from 'lucide-react';
-import type { GameState, Settings, TargetCount } from '../game/model';
+import type { Round, Settings, TargetCount } from '../game/model';
 import { MAZE_STYLES } from '../game/styles';
 import type { Dispatch } from '../game/useGame';
 import { unlockAudio } from '../audio/sound';
@@ -88,17 +88,20 @@ const TARGET_COUNT_OPTIONS: ReadonlyArray<{
   { value: 'all', label: 'Vše' },
 ];
 
-export function SettingsPanel({
-  state,
+export const SettingsPanel = memo(function SettingsPanel({
+  settings,
+  roundKind,
+  showHint,
   dispatch,
   onEnterFocus,
 }: {
-  state: GameState;
+  settings: Settings;
+  roundKind: Round['kind'];
+  showHint: boolean;
   dispatch: Dispatch;
   onEnterFocus: () => void;
 }) {
   const [showHelp, setShowHelp] = useState(false);
-  const { settings, round, showHint } = state;
   const theme = getThemeById(settings.themeId);
   const t = getMessages(settings.language);
   const { ui, isLight } = theme;
@@ -135,7 +138,7 @@ export function SettingsPanel({
           {DIFFICULTY_PRESETS.map((item) => {
             const dims = getMazeDimensions(item, aspectRatio);
             const sizeText =
-              round.kind === 'polar'
+              roundKind === 'polar'
                 ? t.ringsCount(item.polarRings)
                 : `${dims.cols}×${dims.rows}`;
             const label = t.difficulties[item.id] ?? item.label;
@@ -461,4 +464,4 @@ export function SettingsPanel({
       )}
     </section>
   );
-}
+});

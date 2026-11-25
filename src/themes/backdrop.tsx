@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import type { MazeTheme } from './catalog';
+
+const MAX_BACKDROP_DPR = 1.5;
 
 const STAR_COLORS = ['#e0f2fe', '#c4b5fd', '#fef08a', '#f8fafc', '#93c5fd'];
 
@@ -301,7 +303,11 @@ function drawThemedBackdropCanvas(
   ctx.fillRect(0, 0, width, height);
 }
 
-export function PageBackdrop({ theme }: { theme: MazeTheme }) {
+export const PageBackdrop = memo(function PageBackdrop({
+  theme,
+}: {
+  theme: MazeTheme;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -311,9 +317,13 @@ export function PageBackdrop({ theme }: { theme: MazeTheme }) {
     const render = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_BACKDROP_DPR);
+      const targetW = Math.floor(w * dpr);
+      const targetH = Math.floor(h * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -344,4 +354,4 @@ export function PageBackdrop({ theme }: { theme: MazeTheme }) {
       className="pointer-events-none fixed inset-0 z-0 h-screen w-screen print:hidden"
     />
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   CircleDot,
   Disc,
@@ -8,29 +9,34 @@ import {
   Minimize2,
   RefreshCw,
 } from 'lucide-react';
-import type { GameState } from '../game/model';
+import type { Settings } from '../game/model';
 import type { Dispatch } from '../game/useGame';
 import { unlockAudio } from '../audio/sound';
 import { getMessages } from '../i18n';
 import { getThemeById } from '../themes/catalog';
 import { IconButton, SoundButton } from './controls';
 
-export function FocusToolbar({
-  state,
+export const FocusToolbar = memo(function FocusToolbar({
+  settings,
+  collectedCount,
+  totalTargets,
+  showHint,
   dispatch,
   onExit,
   browserFullscreen,
   fullscreenSupported,
   onToggleBrowserFullscreen,
 }: {
-  state: GameState;
+  settings: Settings;
+  collectedCount: number;
+  totalTargets: number;
+  showHint: boolean;
   dispatch: Dispatch;
   onExit: () => void;
   browserFullscreen: boolean;
   fullscreenSupported: boolean;
   onToggleBrowserFullscreen: () => void;
 }) {
-  const { settings, round, showHint } = state;
   const theme = getThemeById(settings.themeId);
   const t = getMessages(settings.language);
   const { ui, isLight } = theme;
@@ -55,7 +61,7 @@ export function FocusToolbar({
         >
           <CircleDot className="h-3.5 w-3.5" />
           <span className="font-mono">
-            {round.run.collected.size}/{round.board.targets.length}
+            {collectedCount}/{totalTargets}
           </span>
         </div>
       )}
@@ -154,4 +160,4 @@ export function FocusToolbar({
       </button>
     </div>
   );
-}
+});

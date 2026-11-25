@@ -1,9 +1,10 @@
 import { Compass, RotateCw } from 'lucide-react';
 import {
+  memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
-  useState,
   type MutableRefObject,
 } from 'react';
 import { gridGeometry, polarGeometry } from '../game/geometry';
@@ -15,11 +16,10 @@ import {
   stepPolarMarblePhysics,
   type MarbleBody,
   type PolarMarbleBody,
-  type Vec3,
 } from '../game/marble';
-import type { GameState, Round } from '../game/model';
+import type { Round, Settings } from '../game/model';
 import type { Position } from '../maze/types';
-import { hintPath, phase, playerOf, visitedKeys } from '../game/reduce';
+import { hintPath, playerOf, visitedKeys } from '../game/reduce';
 import { useTiltInput } from '../game/tilt';
 import type { Dispatch } from '../game/useGame';
 import {
@@ -37,7 +37,9 @@ import { RectMaze } from './RectMaze';
 
 interface ViewProps<R> {
   round: R;
-  state: GameState;
+  settings: Settings;
+  showHint: boolean;
+  won: boolean;
   fullScreen: boolean;
 }
 
@@ -45,20 +47,26 @@ const EMPTY_VISITED = new Set<string>();
 const EMPTY_GRID_TRAIL: Position[] = [];
 const EMPTY_POLAR_TRAIL: string[] = [];
 
-export function MazeStage({
-  state,
+export const MazeStage = memo(function MazeStage({
+  settings,
+  round,
+  showHint,
+  won,
+  winElapsedSeconds,
   dispatch,
   fullScreen,
 }: {
-  state: GameState;
+  settings: Settings;
+  round: Round;
+  showHint: boolean;
+  won: boolean;
+  winElapsedSeconds: number;
   dispatch: Dispatch;
   fullScreen: boolean;
 }) {
-  const won = phase(state) === 'won';
-  const { marbleMode, sound, style, language } = state.settings;
+  const { marbleMode, sound, language } = settings;
   const t = getMessages(language);
   const drag = useDragMove(dispatch, won || marbleMode);
-  const { round } = state;
 
   const { tiltRef, permission, hasGyro, requestPermission, calibrate } =
     useTiltInput(marbleMode && !won);
@@ -71,19 +79,10 @@ export function MazeStage({
       ? createPolarMarbleAt(round.board.maze, playerOf(round.run))
       : null,
   );
-  const [curvedMarblePos, setCurvedMarblePos] = useState<{
-    x: number;
-    y: number;
-    level?: 'over' | 'under';
-    u?: Vec3;
-    v?: Vec3;
-  } | null>(null);
-  const [polarMarblePos, setPolarMarblePos] = useState<{
-    x: number;
-    y: number;
-    u?: Vec3;
-    v?: Vec3;
-  } | null>(null);
+  const stageDrawRef = useRef<(() => void) | null>(null);
+  const registerStageDraw = useCallback((fn: (() => void) | null) => {
+    stageDrawRef.current = fn;
+  }, []);
 
   // Sync marble position when starting a new maze, restarting, or toggling marble mode
   const roundBoard = round.board;
@@ -98,15 +97,7 @@ export function MazeStage({
         marbleRef.current.col !== pos.col
       ) {
         marbleRef.current = createMarbleAt(pos);
-        if (style === 'curved') {
-          setCurvedMarblePos({
-            x: marbleRef.current.x,
-            y: marbleRef.current.y,
-            level: marbleRef.current.level,
-            u: marbleRef.current.u,
-            v: marbleRef.current.v,
-          });
-        }
+        stageDrawRef.current?.();
       }
     } else {
       const cellId = playerOf(round.run);
@@ -116,14 +107,8 @@ export function MazeStage({
         !polarMarbleRef.current ||
         polarMarbleRef.current.cellId !== cellId
       ) {
-        const body = createPolarMarbleAt(round.board.maze, cellId);
-        polarMarbleRef.current = body;
-        setPolarMarblePos({
-          x: body.x,
-          y: body.y,
-          u: body.u,
-          v: body.v,
-        });
+        polarMarbleRef.current = createPolarMarbleAt(round.board.maze, cellId);
+        stageDrawRef.current?.();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,16 +139,6 @@ export function MazeStage({
         );
         marbleRef.current = result.body;
 
-        if (style === 'curved') {
-          setCurvedMarblePos({
-            x: result.body.x,
-            y: result.body.y,
-            level: result.body.level,
-            u: result.body.u,
-            v: result.body.v,
-          });
-        }
-
         if (sound) {
           setMarbleRollingSpeed(result.speedNormalized);
           if (result.bumpIntensity > 0) {
@@ -175,6 +150,10 @@ export function MazeStage({
 
         for (const step of result.enteredCells) {
           dispatch({ type: 'move', dx: step.dx, dy: step.dy });
+        }
+
+        if (result.enteredCells.length === 0) {
+          stageDrawRef.current?.();
         }
       } else {
         const current =
@@ -187,12 +166,6 @@ export function MazeStage({
           dt,
         );
         polarMarbleRef.current = result.body;
-        setPolarMarblePos({
-          x: result.body.x,
-          y: result.body.y,
-          u: result.body.u,
-          v: result.body.v,
-        });
 
         if (sound) {
           setMarbleRollingSpeed(result.speedNormalized);
@@ -206,6 +179,10 @@ export function MazeStage({
         for (const step of result.enteredCells) {
           dispatch({ type: 'move', dx: step.dx, dy: step.dy });
         }
+
+        if (result.enteredCells.length === 0) {
+          stageDrawRef.current?.();
+        }
       }
 
       rafId = window.requestAnimationFrame(frame);
@@ -216,7 +193,7 @@ export function MazeStage({
       window.cancelAnimationFrame(rafId);
       stopMarbleRollingSound();
     };
-  }, [marbleMode, won, round.kind, round.board, sound, style, dispatch, tiltRef]);
+  }, [marbleMode, won, round.kind, round.board, sound, dispatch, tiltRef]);
 
   return (
     <div
@@ -230,7 +207,7 @@ export function MazeStage({
       {marbleMode && !won && permission !== 'unsupported' && (
         <div
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-200 shadow-xl backdrop-blur-md"
+          className="fixed bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 text-xs text-slate-200 shadow-xl pointer-fine:bg-slate-900/90 pointer-fine:backdrop-blur-md"
         >
           {permission === 'prompt' ? (
             <button
@@ -270,39 +247,47 @@ export function MazeStage({
       {round.kind === 'grid' ? (
         <GridView
           round={round}
-          state={state}
+          settings={settings}
+          showHint={showHint}
+          won={won}
           fullScreen={fullScreen}
           marbleRef={marbleRef}
-          curvedMarblePos={curvedMarblePos}
+          registerDraw={registerStageDraw}
         />
       ) : (
         <PolarView
           round={round}
-          state={state}
+          settings={settings}
+          showHint={showHint}
+          won={won}
           fullScreen={fullScreen}
-          polarMarblePos={polarMarblePos}
+          polarMarbleRef={polarMarbleRef}
+          registerDraw={registerStageDraw}
         />
       )}
-      {won && <WinOverlay state={state} dispatch={dispatch} />}
+      {won && (
+        <WinOverlay
+          settings={settings}
+          round={round}
+          elapsedSeconds={winElapsedSeconds}
+          dispatch={dispatch}
+        />
+      )}
     </div>
   );
-}
+});
 
 function GridView({
   round,
-  state,
+  settings,
+  showHint,
+  won,
   fullScreen,
   marbleRef,
-  curvedMarblePos,
+  registerDraw,
 }: ViewProps<Extract<Round, { kind: 'grid' }>> & {
   marbleRef: MutableRefObject<MarbleBody>;
-  curvedMarblePos: {
-    x: number;
-    y: number;
-    level?: 'over' | 'under';
-    u?: Vec3;
-    v?: Vec3;
-  } | null;
+  registerDraw: (fn: (() => void) | null) => void;
 }) {
   const {
     mode,
@@ -312,15 +297,15 @@ function GridView({
     marbleMode,
     fogOfWar,
     showTrail,
-  } = state.settings;
-  const fogActive = fogOfWar && phase(state) !== 'won';
+  } = settings;
+  const fogActive = fogOfWar && !won;
   const visited = useMemo(
     () => (showTrail ? visitedKeys(gridGeometry, round.run) : EMPTY_VISITED),
     [round.run, showTrail],
   );
   const hint = useMemo(
-    () => hintPath(gridGeometry, round, mode, state.showHint),
-    [round, mode, state.showHint],
+    () => hintPath(gridGeometry, round, mode, showHint),
+    [round, mode, showHint],
   );
   const props = {
     maze: round.board.maze,
@@ -334,38 +319,39 @@ function GridView({
     collected: round.run.collected,
     theme: getThemeById(themeId),
     marbleMode,
+    marbleRef,
+    registerDraw,
     fogOfWar: fogActive,
     fullScreen,
   };
   return style === 'curved' ? (
-    <CurvedMaze {...props} marblePos={curvedMarblePos} />
+    <CurvedMaze {...props} />
   ) : (
-    <RectMaze {...props} visited={visited} marbleRef={marbleRef} />
+    <RectMaze {...props} visited={visited} />
   );
 }
 
 function PolarView({
   round,
-  state,
+  settings,
+  showHint,
+  won,
   fullScreen,
-  polarMarblePos,
+  polarMarbleRef,
+  registerDraw,
 }: ViewProps<Extract<Round, { kind: 'polar' }>> & {
-  polarMarblePos: {
-    x: number;
-    y: number;
-    u?: Vec3;
-    v?: Vec3;
-  } | null;
+  polarMarbleRef: MutableRefObject<PolarMarbleBody | null>;
+  registerDraw: (fn: (() => void) | null) => void;
 }) {
-  const { mode, themeId, marbleMode, fogOfWar, showTrail } = state.settings;
-  const fogActive = fogOfWar && phase(state) !== 'won';
+  const { mode, themeId, marbleMode, fogOfWar, showTrail } = settings;
+  const fogActive = fogOfWar && !won;
   const visited = useMemo(
     () => (showTrail ? visitedKeys(polarGeometry, round.run) : EMPTY_VISITED),
     [round.run, showTrail],
   );
   const hint = useMemo(
-    () => hintPath(polarGeometry, round, mode, state.showHint),
-    [round, mode, state.showHint],
+    () => hintPath(polarGeometry, round, mode, showHint),
+    [round, mode, showHint],
   );
   return (
     <CircularMaze
@@ -380,7 +366,8 @@ function PolarView({
       collected={round.run.collected}
       theme={getThemeById(themeId)}
       marbleMode={marbleMode}
-      marblePos={polarMarblePos}
+      marbleRef={polarMarbleRef}
+      registerDraw={registerDraw}
       fogOfWar={fogActive}
       fullScreen={fullScreen}
     />

@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import type { Settings } from '../game/model';
 import { getMessages } from '../i18n';
 import { getThemeById } from '../themes/catalog';
 
-export function Header({ settings }: { settings: Settings }) {
+export const Header = memo(function Header({ settings }: { settings: Settings }) {
   const theme = getThemeById(settings.themeId);
   const t = getMessages(settings.language);
   const story = t.stories[settings.themeId];
@@ -23,4 +24,4 @@ export function Header({ settings }: { settings: Settings }) {
       <p className={`mt-1.5 text-sm ${theme.ui.subtitle}`}>{subtitle}</p>
     </header>
   );
-}
+});

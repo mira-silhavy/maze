@@ -149,25 +149,26 @@ export function drawMarbleCanvas(
   } else {
     ctx.globalAlpha = baseAlpha;
     const shadowOffset = elevated ? r * 0.34 : r * 0.18;
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(
-      shadowOffset * 0.75,
-      shadowOffset,
-      r * (elevated ? 1.06 : 0.96),
-      r * (elevated ? 0.96 : 0.86),
-      0,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fillStyle = theme.isLight
+    const shadowRx = r * (elevated ? 1.24 : 1.08);
+    const shadowRy = r * (elevated ? 1.12 : 0.96);
+    const shadowAlpha = theme.isLight
       ? elevated
-        ? 'rgba(15, 23, 42, 0.24)'
-        : 'rgba(15, 23, 42, 0.28)'
+        ? 0.24
+        : 0.28
       : elevated
-        ? 'rgba(0, 0, 0, 0.38)'
-        : 'rgba(0, 0, 0, 0.44)';
-    ctx.filter = `blur(${Math.max(1.5, r * (elevated ? 0.28 : 0.14)).toFixed(1)}px)`;
+        ? 0.38
+        : 0.44;
+    const shadowColor = theme.isLight ? '15, 23, 42' : '0, 0, 0';
+    ctx.save();
+    ctx.translate(shadowOffset * 0.75, shadowOffset);
+    ctx.scale(1, shadowRy / shadowRx);
+    const shadowGrad = ctx.createRadialGradient(0, 0, shadowRx * 0.35, 0, 0, shadowRx);
+    shadowGrad.addColorStop(0, `rgba(${shadowColor}, ${shadowAlpha})`);
+    shadowGrad.addColorStop(0.7, `rgba(${shadowColor}, ${(shadowAlpha * 0.5).toFixed(3)})`);
+    shadowGrad.addColorStop(1, `rgba(${shadowColor}, 0)`);
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, shadowRx, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }

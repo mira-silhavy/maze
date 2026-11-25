@@ -29,6 +29,7 @@ export interface MarbleStepResult {
 }
 
 export const MARBLE_RADIUS = 0.27;
+const MARBLE_RADIUS_SQ = MARBLE_RADIUS * MARBLE_RADIUS;
 const ACCEL = 16.5;
 const FRICTION = 3.4;
 const MAX_SPEED = 6.5;
@@ -173,17 +174,12 @@ export function stepMarblePhysics(
     }
 
     // Corner-post circle collisions so the marble glides smoothly around open turns without clipping wall ends
-    const corners: Array<{ cx: number; cy: number }> = [
-      { cx: col, cy: row },
-      { cx: col + 1, cy: row },
-      { cx: col, cy: row + 1 },
-      { cx: col + 1, cy: row + 1 },
-    ];
-    for (const { cx, cy } of corners) {
+    const resolveCorner = (cx: number, cy: number) => {
       const dx = x - cx;
       const dy = y - cy;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0 && dist < MARBLE_RADIUS) {
+      const distSq = dx * dx + dy * dy;
+      if (distSq > 0 && distSq < MARBLE_RADIUS_SQ) {
+        const dist = Math.sqrt(distSq);
         const nx = dx / dist;
         const ny = dy / dist;
         x = cx + nx * MARBLE_RADIUS;
@@ -194,7 +190,11 @@ export function stepMarblePhysics(
           vy -= (1 + BOUNCE * 0.5) * vn * ny;
         }
       }
-    }
+    };
+    resolveCorner(col, row);
+    resolveCorner(col + 1, row);
+    resolveCorner(col, row + 1);
+    resolveCorner(col + 1, row + 1);
 
     // Roll the 3D sphere basis based on actual distance traveled
     const stepDx = x - startX;
@@ -305,8 +305,9 @@ export function stepPolarMarblePhysics(
   const resolvePointCollision = (cx: number, cy: number) => {
     const dx = x - cx;
     const dy = y - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 0 && dist < MARBLE_RADIUS) {
+    const distSq = dx * dx + dy * dy;
+    if (distSq > 0 && distSq < MARBLE_RADIUS_SQ) {
+      const dist = Math.sqrt(distSq);
       const nx = dx / dist;
       const ny = dy / dist;
       x = cx + nx * MARBLE_RADIUS;
@@ -372,15 +373,22 @@ export function stepPolarMarblePhysics(
     const distFromCenter = Math.hypot(x, y);
     const minRing = Math.max(1, Math.floor(distFromCenter) - 1);
     const maxRing = Math.min(maze.rings - 1, Math.floor(distFromCenter) + 1);
+    const relAngle =
+      (((Math.atan2(y, x) + Math.PI / 2) % TWO_PI) + TWO_PI) % TWO_PI;
+    const safeReach = MARBLE_RADIUS * 2.5;
+    const angMargin =
+      distFromCenter > safeReach
+        ? Math.asin(safeReach / distFromCenter)
+        : Math.PI;
 
     for (let ring = minRing; ring <= maxRing; ring++) {
       const count = maze.ringCounts[ring];
       const innerCount = maze.ringCounts[ring - 1];
       const ratio = count / innerCount;
 
-      for (let sector = 0; sector < count; sector++) {
+      const collideSector = (sector: number) => {
         const cell = maze.cells.get(polarCellId(ring, sector));
-        if (!cell) continue;
+        if (!cell) return;
 
         // Inner circular arc wall
         const innerId = polarCellId(ring - 1, Math.floor(sector / ratio));
@@ -404,6 +412,33 @@ export function stepPolarMarblePhysics(
         // Outer rim boundary
         if (ring === maze.rings - 1) {
           collideArc(cell.rOuter, cell.angleStart, cell.angleEnd);
+        }
+      };
+
+      const halfSectors = Math.ceil((angMargin / TWO_PI) * count) + 1;
+      if (halfSectors * 2 + 1 >= count) {
+        for (let sector = 0; sector < count; sector++) {
+          collideSector(sector);
+        }
+      } else {
+        const centerSector = Math.min(
+          count - 1,
+          Math.floor((relAngle / TWO_PI) * count),
+        );
+        const lo = centerSector - halfSectors;
+        const hi = centerSector + halfSectors;
+        if (lo < 0) {
+          for (let sector = 0; sector <= hi; sector++) collideSector(sector);
+          for (let sector = lo + count; sector < count; sector++) {
+            collideSector(sector);
+          }
+        } else if (hi >= count) {
+          for (let sector = 0; sector <= hi - count; sector++) {
+            collideSector(sector);
+          }
+          for (let sector = lo; sector < count; sector++) collideSector(sector);
+        } else {
+          for (let sector = lo; sector <= hi; sector++) collideSector(sector);
         }
       }
     }

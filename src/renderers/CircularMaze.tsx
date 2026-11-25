@@ -1,5 +1,13 @@
-import { useMemo } from 'react';
-import type { Vec3 } from '../game/marble';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
+import type { PolarMarbleBody } from '../game/marble';
 import {
   hasPolarPassage,
   polarCellId,
@@ -28,12 +36,8 @@ interface CircularMazeProps {
   collected: Set<string>;
   theme: MazeTheme;
   marbleMode?: boolean;
-  marblePos?: {
-    x: number;
-    y: number;
-    u?: Vec3;
-    v?: Vec3;
-  } | null;
+  marbleRef?: MutableRefObject<PolarMarbleBody | null>;
+  registerDraw?: (fn: (() => void) | null) => void;
   fogOfWar?: boolean;
   fullScreen?: boolean;
 }
@@ -77,6 +81,114 @@ function sectorWedgePath(cell: PolarCell): string {
   ].join(' ');
 }
 
+function projectPolarTowardOpenNeighbor(
+  maze: PolarMaze,
+  cur: PolarCell,
+  mp: { x: number; y: number },
+  excludeId?: string,
+): { x: number; y: number } | null {
+  const mx = mp.x - cur.x;
+  const my = mp.y - cur.y;
+  let best: { x: number; y: number } | null = null;
+  let bestScore = 0.02;
+  for (const nId of cur.neighbors) {
+    if (nId === excludeId || !hasPolarPassage(maze, cur.id, nId)) continue;
+    const n = maze.cells.get(nId);
+    if (!n) continue;
+    const vx = n.x - cur.x;
+    const vy = n.y - cur.y;
+    const lenSq = vx * vx + vy * vy;
+    if (lenSq < 1e-6) continue;
+    const u = Math.min(1, (mx * vx + my * vy) / lenSq);
+    if (u > bestScore) {
+      bestScore = u;
+      best = { x: cur.x + vx * u, y: cur.y + vy * u };
+    }
+  }
+  return best;
+}
+
+function buildPolarLiveTipD(
+  maze: PolarMaze,
+  trail: string[],
+  mp: { x: number; y: number },
+): string {
+  if (trail.length === 0) return '';
+  if (trail.length === 1) {
+    const cur = maze.cells.get(trail[0]);
+    if (!cur) return '';
+    const ext = projectPolarTowardOpenNeighbor(maze, cur, mp);
+    if (!ext) return '';
+    return `M ${(cur.x * RING_STEP).toFixed(2)} ${(cur.y * RING_STEP).toFixed(2)} L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`;
+  }
+
+  const prev = maze.cells.get(trail[trail.length - 2])!;
+  const cur = maze.cells.get(trail[trail.length - 1])!;
+  const vx = cur.x - prev.x;
+  const vy = cur.y - prev.y;
+  const lenSq = vx * vx + vy * vy;
+  const t =
+    lenSq > 1e-6
+      ? Math.max(
+          0,
+          Math.min(1, ((mp.x - prev.x) * vx + (mp.y - prev.y) * vy) / lenSq),
+        )
+      : 1;
+  const tipX = (prev.x + vx * t) * RING_STEP;
+  const tipY = (prev.y + vy * t) * RING_STEP;
+  const parts = [
+    `M ${(prev.x * RING_STEP).toFixed(2)} ${(prev.y * RING_STEP).toFixed(2)}`,
+    `L ${tipX.toFixed(2)} ${tipY.toFixed(2)}`,
+  ];
+
+  if (t >= 0.999) {
+    const ext = projectPolarTowardOpenNeighbor(maze, cur, mp, prev.id);
+    if (ext) {
+      parts.push(
+        `L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`,
+      );
+    }
+  }
+  return parts.join(' ');
+}
+
+const LivePolarMarble = memo(function LivePolarMarble({
+  fallbackX,
+  fallbackY,
+  theme,
+  marbleRef,
+  registerTick,
+}: {
+  fallbackX: number;
+  fallbackY: number;
+  theme: MazeTheme;
+  marbleRef: MutableRefObject<PolarMarbleBody | null>;
+  registerTick: (fn: (() => void) | null) => void;
+}) {
+  const [, setFrame] = useState(0);
+
+  useEffect(() => {
+    const tick = () => setFrame((n) => (n + 1) | 0);
+    registerTick(tick);
+    return () => registerTick(null);
+  }, [registerTick]);
+
+  const body = marbleRef.current;
+  const x = body ? body.x * RING_STEP : fallbackX;
+  const y = body ? body.y * RING_STEP : fallbackY;
+  return (
+    <MarbleSvg
+      x={x}
+      y={y}
+      r={9.5}
+      theme={theme}
+      idPrefix="polar"
+      u={body?.u}
+      v={body?.v}
+    />
+  );
+});
+
 export function CircularMaze({
   maze,
   playerId,
@@ -89,7 +201,8 @@ export function CircularMaze({
   collected,
   theme,
   marbleMode = false,
-  marblePos = null,
+  marbleRef,
+  registerDraw,
   fogOfWar = false,
   fullScreen = false,
 }: CircularMazeProps) {
@@ -135,17 +248,36 @@ export function CircularMaze({
     return paths.join(' ');
   }, [maze, gameMode]);
 
-  const pencilPathD = useMemo(() => {
-    if (trail.length < 2) return '';
-    return trail
-      .map((id, idx) => {
-        const cell = maze.cells.get(id)!;
-        const x = (cell.x * RING_STEP).toFixed(2);
-        const y = (cell.y * RING_STEP).toFixed(2);
-        return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
-      })
-      .join(' ');
-  }, [trail, maze]);
+  const sectorWedges = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cell of maze.cellList) {
+      map.set(cell.id, sectorWedgePath(cell));
+    }
+    return map;
+  }, [maze]);
+
+  const visitedWedgeD = useMemo(() => {
+    if (visited.size === 0) return '';
+    const parts: string[] = [];
+    for (const id of visited) {
+      const d = sectorWedges.get(id);
+      if (d) parts.push(d);
+    }
+    return parts.join(' ');
+  }, [visited, sectorWedges]);
+
+  const staticPencilPathD = useMemo(() => {
+    const count = marbleMode ? trail.length - 1 : trail.length;
+    if (count < 2) return '';
+    const parts: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const cell = maze.cells.get(trail[i])!;
+      const x = (cell.x * RING_STEP).toFixed(2);
+      const y = (cell.y * RING_STEP).toFixed(2);
+      parts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`);
+    }
+    return parts.join(' ');
+  }, [trail, maze, marbleMode]);
 
   const hintPathD = useMemo(() => {
     if (hintPath.length < 2) return '';
@@ -159,93 +291,69 @@ export function CircularMaze({
       .join(' ');
   }, [hintPath, maze]);
 
+  const exploredCells = useMemo(() => {
+    if (!fogOfWar) return [];
+    const list: PolarCell[] = [];
+    for (const cell of maze.cellList) {
+      if (explored.has(cell.id)) list.push(cell);
+    }
+    return list;
+  }, [maze, explored, fogOfWar]);
+
   const playerCell = maze.cells.get(playerId)!;
   const startCell = maze.cells.get(maze.startId)!;
   const endCell = maze.cells.get(maze.endId)!;
   const wallStroke = Math.max(2.2, Math.min(4, RING_STEP * 0.095));
-  const activeX =
-    marbleMode && marblePos
-      ? marblePos.x * RING_STEP
-      : playerCell.x * RING_STEP;
-  const activeY =
-    marbleMode && marblePos
-      ? marblePos.y * RING_STEP
-      : playerCell.y * RING_STEP;
-  const livePencilPathD = useMemo(() => {
-    if (!marbleMode || !marblePos || trail.length === 0) return pencilPathD;
 
-    const projectTowardOpenNeighbor = (
-      cur: PolarCell,
-      excludeId?: string,
-    ): { x: number; y: number } | null => {
-      const mx = marblePos.x - cur.x;
-      const my = marblePos.y - cur.y;
-      let best: { x: number; y: number } | null = null;
-      let bestScore = 0.02;
-      for (const nId of cur.neighbors) {
-        if (nId === excludeId || !hasPolarPassage(maze, cur.id, nId)) continue;
-        const n = maze.cells.get(nId);
-        if (!n) continue;
-        const vx = n.x - cur.x;
-        const vy = n.y - cur.y;
-        const lenSq = vx * vx + vy * vy;
-        if (lenSq < 1e-6) continue;
-        const u = Math.min(1, (mx * vx + my * vy) / lenSq);
-        if (u > bestScore) {
-          bestScore = u;
-          best = { x: cur.x + vx * u, y: cur.y + vy * u };
-        }
-      }
-      return best;
-    };
+  const marbleBody = marbleMode && marbleRef ? marbleRef.current : null;
+  const activeX = marbleBody
+    ? marbleBody.x * RING_STEP
+    : playerCell.x * RING_STEP;
+  const activeY = marbleBody
+    ? marbleBody.y * RING_STEP
+    : playerCell.y * RING_STEP;
+  const initialLiveTipD = marbleBody
+    ? buildPolarLiveTipD(maze, trail, marbleBody)
+    : '';
 
-    if (trail.length === 1) {
-      const cur = maze.cells.get(trail[0]);
-      if (!cur) return '';
-      const ext = projectTowardOpenNeighbor(cur);
-      if (!ext) return '';
-      return `M ${(cur.x * RING_STEP).toFixed(2)} ${(cur.y * RING_STEP).toFixed(2)} L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`;
-    }
+  const liveTipPathRef = useRef<SVGPathElement>(null);
+  const fogLightCircleRef = useRef<SVGCircleElement>(null);
+  const fogTintCircleRef = useRef<SVGCircleElement>(null);
+  const marbleTickRef = useRef<(() => void) | null>(null);
+  const registerMarbleTick = useCallback((fn: (() => void) | null) => {
+    marbleTickRef.current = fn;
+  }, []);
 
-    const parts: string[] = [];
-    for (let i = 0; i < trail.length - 1; i++) {
-      const cell = maze.cells.get(trail[i])!;
-      parts.push(
-        `${i === 0 ? 'M' : 'L'} ${(cell.x * RING_STEP).toFixed(2)} ${(cell.y * RING_STEP).toFixed(2)}`,
+  const updateLiveDomRef = useRef<() => void>(() => {});
+  updateLiveDomRef.current = () => {
+    if (!marbleMode || !marbleRef?.current) return;
+    const body = marbleRef.current;
+    const px = body.x * RING_STEP;
+    const py = body.y * RING_STEP;
+
+    if (liveTipPathRef.current) {
+      liveTipPathRef.current.setAttribute(
+        'd',
+        buildPolarLiveTipD(maze, trail, body),
       );
     }
-
-    const prev = maze.cells.get(trail[trail.length - 2])!;
-    const cur = maze.cells.get(trail[trail.length - 1])!;
-    const vx = cur.x - prev.x;
-    const vy = cur.y - prev.y;
-    const lenSq = vx * vx + vy * vy;
-    const t =
-      lenSq > 1e-6
-        ? Math.max(
-            0,
-            Math.min(
-              1,
-              ((marblePos.x - prev.x) * vx + (marblePos.y - prev.y) * vy) /
-                lenSq,
-            ),
-          )
-        : 1;
-    const tipX = (prev.x + vx * t) * RING_STEP;
-    const tipY = (prev.y + vy * t) * RING_STEP;
-    parts.push(`L ${tipX.toFixed(2)} ${tipY.toFixed(2)}`);
-
-    if (t >= 0.999) {
-      const ext = projectTowardOpenNeighbor(cur, prev.id);
-      if (ext) {
-        parts.push(
-          `L ${(ext.x * RING_STEP).toFixed(2)} ${(ext.y * RING_STEP).toFixed(2)}`,
-        );
-      }
+    if (fogLightCircleRef.current) {
+      fogLightCircleRef.current.setAttribute('cx', px.toFixed(2));
+      fogLightCircleRef.current.setAttribute('cy', py.toFixed(2));
     }
+    if (fogTintCircleRef.current) {
+      fogTintCircleRef.current.setAttribute('cx', px.toFixed(2));
+      fogTintCircleRef.current.setAttribute('cy', py.toFixed(2));
+    }
+    marbleTickRef.current?.();
+  };
 
-    return parts.join(' ');
-  }, [marbleMode, marblePos, trail, pencilPathD, maze]);
+  useEffect(() => {
+    if (!registerDraw) return;
+    const draw = () => updateLiveDomRef.current();
+    registerDraw(draw);
+    return () => registerDraw(null);
+  }, [registerDraw]);
 
   return (
     <div
@@ -292,18 +400,17 @@ export function CircularMaze({
                   height={halfExtent * 2}
                   fill="white"
                 />
-                {maze.cellList.map((cell) =>
-                  explored.has(cell.id) ? (
-                    <circle
-                      key={`f-${cell.id}`}
-                      cx={cell.x * RING_STEP}
-                      cy={cell.y * RING_STEP}
-                      r={RING_STEP * 1.65}
-                      fill="url(#polar-fog-mem)"
-                    />
-                  ) : null,
-                )}
+                {exploredCells.map((cell) => (
+                  <circle
+                    key={`f-${cell.id}`}
+                    cx={cell.x * RING_STEP}
+                    cy={cell.y * RING_STEP}
+                    r={RING_STEP * 1.65}
+                    fill="url(#polar-fog-mem)"
+                  />
+                ))}
                 <circle
+                  ref={fogLightCircleRef}
                   cx={activeX}
                   cy={activeY}
                   r={RING_STEP * 2.8}
@@ -323,28 +430,22 @@ export function CircularMaze({
           fillOpacity={CORRIDOR_FLOOR_OPACITY}
         />
 
-        {/* Visited cells */}
-        {maze.cellList.map((cell) =>
-          visited.has(cell.id) ? (
-            <path
-              key={`v-${cell.id}`}
-              d={sectorWedgePath(cell)}
-              fill={theme.visitedFill}
-            />
-          ) : null,
-        )}
+        {/* Visited cells (single combined path) */}
+        {visitedWedgeD && <path d={visitedWedgeD} fill={theme.visitedFill} />}
 
-        {/* Continuous pencil line */}
-        {livePencilPathD && (
-          <path
-            d={livePencilPathD}
+        {/* Continuous pencil line (group opacity keeps the history/tip join seamless) */}
+        {(staticPencilPathD || marbleMode) && (
+          <g
             fill="none"
             stroke={theme.pencilLine}
             strokeWidth="6.5"
             strokeLinecap="round"
             strokeLinejoin="round"
             opacity={theme.isLight ? 0.85 : 0.8}
-          />
+          >
+            {staticPencilPathD && <path d={staticPencilPathD} />}
+            {marbleMode && <path ref={liveTipPathRef} d={initialLiveTipD} />}
+          </g>
         )}
 
         {/* Hint path */}
@@ -422,15 +523,13 @@ export function CircularMaze({
 
         {/* Player */}
         <g filter={theme.isLight ? undefined : 'url(#polar-glow)'}>
-          {marbleMode ? (
-            <MarbleSvg
-              x={activeX}
-              y={activeY}
-              r={9.5}
+          {marbleMode && marbleRef ? (
+            <LivePolarMarble
+              fallbackX={playerCell.x * RING_STEP}
+              fallbackY={playerCell.y * RING_STEP}
               theme={theme}
-              idPrefix="polar"
-              u={marblePos?.u}
-              v={marblePos?.v}
+              marbleRef={marbleRef}
+              registerTick={registerMarbleTick}
             />
           ) : (
             <ThemedPlayerSvg
@@ -454,6 +553,7 @@ export function CircularMaze({
               mask="url(#polar-fog-mask)"
             />
             <circle
+              ref={fogTintCircleRef}
               cx={activeX}
               cy={activeY}
               r={RING_STEP * 2.8}
