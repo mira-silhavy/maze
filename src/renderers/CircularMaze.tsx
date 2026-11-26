@@ -1,12 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MutableRefObject,
-} from 'react';
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import type { PolarMarbleBody } from '../game/marble';
 import {
   hasPolarPassage,
@@ -16,13 +8,16 @@ import {
 } from '../maze/polar';
 import type { GameMode } from '../maze/types';
 import {
-  MarbleSvg,
+  drawMarbleCanvas,
   ThemedGoalSvg,
   ThemedPlayerSvg,
   ThemedTargetSvg,
 } from '../themes/art';
 import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from '../themes/catalog';
-import { ThemedWallPathSvg } from '../themes/sceneSvg';
+import { GlowFilterSvg, ThemedWallPathSvg } from '../themes/sceneSvg';
+import { drawLiveTipCanvas } from './canvasLayers';
+import { useSvgFogCanvas } from './useSvgFogCanvas';
+import { useViewBoxCanvas } from './viewBoxCanvas';
 
 interface CircularMazeProps {
   maze: PolarMaze;
@@ -44,6 +39,7 @@ interface CircularMazeProps {
 
 const RING_STEP = 36;
 const MARGIN = 24;
+const POLAR_MARBLE_RADIUS = 9.5;
 
 function polarToCartesian(radius: number, angle: number): { x: number; y: number } {
   return {
@@ -152,43 +148,6 @@ function buildPolarLiveTipD(
   return parts.join(' ');
 }
 
-const LivePolarMarble = memo(function LivePolarMarble({
-  fallbackX,
-  fallbackY,
-  theme,
-  marbleRef,
-  registerTick,
-}: {
-  fallbackX: number;
-  fallbackY: number;
-  theme: MazeTheme;
-  marbleRef: MutableRefObject<PolarMarbleBody | null>;
-  registerTick: (fn: (() => void) | null) => void;
-}) {
-  const [, setFrame] = useState(0);
-
-  useEffect(() => {
-    const tick = () => setFrame((n) => (n + 1) | 0);
-    registerTick(tick);
-    return () => registerTick(null);
-  }, [registerTick]);
-
-  const body = marbleRef.current;
-  const x = body ? body.x * RING_STEP : fallbackX;
-  const y = body ? body.y * RING_STEP : fallbackY;
-  return (
-    <MarbleSvg
-      x={x}
-      y={y}
-      r={9.5}
-      theme={theme}
-      idPrefix="polar"
-      u={body?.u}
-      v={body?.v}
-    />
-  );
-});
-
 export function CircularMaze({
   maze,
   playerId,
@@ -291,15 +250,6 @@ export function CircularMaze({
       .join(' ');
   }, [hintPath, maze]);
 
-  const exploredCells = useMemo(() => {
-    if (!fogOfWar) return [];
-    const list: PolarCell[] = [];
-    for (const cell of maze.cellList) {
-      if (explored.has(cell.id)) list.push(cell);
-    }
-    return list;
-  }, [maze, explored, fogOfWar]);
-
   const playerCell = maze.cells.get(playerId)!;
   const startCell = maze.cells.get(maze.startId)!;
   const endCell = maze.cells.get(maze.endId)!;
@@ -312,53 +262,66 @@ export function CircularMaze({
   const activeY = marbleBody
     ? marbleBody.y * RING_STEP
     : playerCell.y * RING_STEP;
-  const initialLiveTipD = marbleBody
-    ? buildPolarLiveTipD(maze, trail, marbleBody)
-    : '';
-
-  const joinClipPathD = useMemo(() => {
-    if (!marbleMode || trail.length < 3) return '';
+  const tipJoin = useMemo(() => {
+    if (!marbleMode || trail.length < 3) return null;
     const prevCell = maze.cells.get(trail[trail.length - 2]);
-    if (!prevCell) return '';
-    const cx = prevCell.x * RING_STEP;
-    const cy = prevCell.y * RING_STEP;
-    const r = 6.5 / 2;
-    return `M ${-halfExtent} ${-halfExtent} H ${halfExtent} V ${halfExtent} H ${-halfExtent} Z M ${(cx - r).toFixed(2)} ${cy.toFixed(2)} a ${r} ${r} 0 1 0 ${(r * 2).toFixed(2)} 0 a ${r} ${r} 0 1 0 ${(-r * 2).toFixed(2)} 0 Z`;
-  }, [marbleMode, trail, maze, halfExtent]);
+    return prevCell
+      ? { x: prevCell.x * RING_STEP, y: prevCell.y * RING_STEP }
+      : null;
+  }, [marbleMode, trail, maze]);
 
   const showOverlay = marbleMode && Boolean(marbleRef);
   const trailOpacity = theme.isLight ? 0.85 : 0.8;
 
-  const liveTipPathRef = useRef<SVGPathElement>(null);
-  const fogLightCircleRef = useRef<SVGCircleElement>(null);
-  const fogTintCircleRef = useRef<SVGCircleElement>(null);
-  const marbleTickRef = useRef<(() => void) | null>(null);
-  const registerMarbleTick = useCallback((fn: (() => void) | null) => {
-    marbleTickRef.current = fn;
-  }, []);
-
+  const viewBoxRect = {
+    x: -halfExtent,
+    y: -halfExtent,
+    width: halfExtent * 2,
+    height: halfExtent * 2,
+  };
+  const fog = useSvgFogCanvas(
+    fogOfWar
+      ? {
+          viewBox: viewBoxRect,
+          cellUnit: RING_STEP,
+          theme,
+          explored,
+          cellOf: (id) => {
+            const cell = maze.cells.get(id);
+            return cell
+              ? { id, x: cell.x * RING_STEP, y: cell.y * RING_STEP }
+              : null;
+          },
+          boardToken: maze,
+          active: { x: activeX, y: activeY },
+        }
+      : null,
+  );
   const updateLiveDomRef = useRef<() => void>(() => {});
+  const live = useViewBoxCanvas(viewBoxRect, showOverlay, () =>
+    updateLiveDomRef.current(),
+  );
   updateLiveDomRef.current = () => {
     if (!marbleMode || !marbleRef?.current) return;
     const body = marbleRef.current;
     const px = body.x * RING_STEP;
     const py = body.y * RING_STEP;
+    if (fogOfWar) fog.draw({ x: px, y: py });
 
-    if (liveTipPathRef.current) {
-      liveTipPathRef.current.setAttribute(
-        'd',
-        buildPolarLiveTipD(maze, trail, body),
-      );
-    }
-    if (fogLightCircleRef.current) {
-      fogLightCircleRef.current.setAttribute('cx', px.toFixed(2));
-      fogLightCircleRef.current.setAttribute('cy', py.toFixed(2));
-    }
-    if (fogTintCircleRef.current) {
-      fogTintCircleRef.current.setAttribute('cx', px.toFixed(2));
-      fogTintCircleRef.current.setAttribute('cy', py.toFixed(2));
-    }
-    marbleTickRef.current?.();
+    const frame = live.begin();
+    if (!frame) return;
+    frame.useViewBoxUnits();
+    drawLiveTipCanvas(frame.ctx, buildPolarLiveTipD(maze, trail, body), {
+      color: theme.pencilLine,
+      width: 6.5,
+      alpha: trailOpacity,
+      cutouts: tipJoin ? [tipJoin] : [],
+      bounds: viewBoxRect,
+    });
+    drawMarbleCanvas(frame.ctx, px, py, POLAR_MARBLE_RADIUS, theme, {
+      u: body.u,
+      v: body.v,
+    });
   };
 
   useEffect(() => {
@@ -367,6 +330,21 @@ export function CircularMaze({
     registerDraw(draw);
     return () => registerDraw(null);
   }, [registerDraw]);
+
+  // Redraw the live layer after every render (new step, theme, restart).
+  useEffect(() => updateLiveDomRef.current());
+
+  const pencilLine = staticPencilPathD && (
+    <path
+      d={staticPencilPathD}
+      fill="none"
+      stroke={theme.pencilLine}
+      strokeWidth="6.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity={trailOpacity}
+    />
+  );
 
   return (
     <div
@@ -385,55 +363,7 @@ export function CircularMaze({
           aria-label="Kruhové bludiště"
         >
           <defs>
-            <filter id="polar-glow" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            {fogOfWar && (
-              <>
-                <radialGradient id="polar-fog-mem">
-                  <stop offset="0%" stopColor="black" stopOpacity="0.56" />
-                  <stop offset="100%" stopColor="black" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="polar-fog-light">
-                  <stop offset="0%" stopColor="black" stopOpacity="1" />
-                  <stop offset="64%" stopColor="black" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="black" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="polar-fog-tint">
-                  <stop offset="0%" stopColor={theme.lightTint} />
-                  <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-                </radialGradient>
-                <mask id="polar-fog-mask">
-                  <rect
-                    x={-halfExtent}
-                    y={-halfExtent}
-                    width={halfExtent * 2}
-                    height={halfExtent * 2}
-                    fill="white"
-                  />
-                  {exploredCells.map((cell) => (
-                    <circle
-                      key={`f-${cell.id}`}
-                      cx={cell.x * RING_STEP}
-                      cy={cell.y * RING_STEP}
-                      r={RING_STEP * 1.65}
-                      fill="url(#polar-fog-mem)"
-                    />
-                  ))}
-                  <circle
-                    ref={fogLightCircleRef}
-                    cx={activeX}
-                    cy={activeY}
-                    r={RING_STEP * 2.8}
-                    fill="url(#polar-fog-light)"
-                  />
-                </mask>
-              </>
-            )}
+            <GlowFilterSvg id="polar-glow" />
           </defs>
 
           {/* Circular floor */}
@@ -448,18 +378,7 @@ export function CircularMaze({
           {/* Visited cells (single combined path) */}
           {visitedWedgeD && <path d={visitedWedgeD} fill={theme.visitedFill} />}
 
-          {/* Committed pencil line */}
-          {staticPencilPathD && (
-            <path
-              d={staticPencilPathD}
-              fill="none"
-              stroke={theme.pencilLine}
-              strokeWidth="6.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={trailOpacity}
-            />
-          )}
+          {!showOverlay && pencilLine}
 
           {/* Hint path */}
           {hintPathD && (
@@ -526,6 +445,8 @@ export function CircularMaze({
             })
           )}
 
+          {showOverlay && pencilLine}
+
           {/* Polar walls */}
           <ThemedWallPathSvg
             d={wallsPathD}
@@ -546,79 +467,22 @@ export function CircularMaze({
             </g>
           )}
 
-          {/* Fog of War + Flashlight */}
-          {fogOfWar && (
-            <>
-              <rect
-                x={-halfExtent}
-                y={-halfExtent}
-                width={halfExtent * 2}
-                height={halfExtent * 2}
-                fill={theme.fogColor}
-                mask="url(#polar-fog-mask)"
-              />
-              <circle
-                ref={fogTintCircleRef}
-                cx={activeX}
-                cy={activeY}
-                r={RING_STEP * 2.8}
-                fill="url(#polar-fog-tint)"
-              />
-            </>
-          )}
         </svg>
 
-        {showOverlay && marbleRef && (
-          <svg
-            viewBox={viewBox}
-            preserveAspectRatio="xMidYMid meet"
+        {fogOfWar && (
+          <canvas
+            ref={fog.canvasRef}
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full rounded-xl"
-            style={{ willChange: 'transform' }}
-          >
-            <defs>
-              <filter
-                id="polar-overlay-glow"
-                x="-40%"
-                y="-40%"
-                width="180%"
-                height="180%"
-              >
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              {joinClipPathD && (
-                <clipPath id="polar-tip-join-clip">
-                  <path d={joinClipPathD} clipRule="evenodd" />
-                </clipPath>
-              )}
-            </defs>
+            className="pointer-events-none absolute rounded-xl"
+          />
+        )}
 
-            <path
-              ref={liveTipPathRef}
-              d={initialLiveTipD}
-              fill="none"
-              stroke={theme.pencilLine}
-              strokeWidth="6.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={trailOpacity}
-              clipPath={joinClipPathD ? 'url(#polar-tip-join-clip)' : undefined}
-            />
-
-            <g filter={theme.isLight ? undefined : 'url(#polar-overlay-glow)'}>
-              <LivePolarMarble
-                fallbackX={playerCell.x * RING_STEP}
-                fallbackY={playerCell.y * RING_STEP}
-                theme={theme}
-                marbleRef={marbleRef}
-                registerTick={registerMarbleTick}
-              />
-            </g>
-          </svg>
+        {showOverlay && (
+          <canvas
+            ref={live.canvasRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute"
+          />
         )}
       </div>
     </div>

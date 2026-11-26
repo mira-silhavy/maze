@@ -1,16 +1,24 @@
 import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from '../themes/catalog';
 
+export interface FogCell {
+  /** Physical cell id: both levels of a bridge cell share one id. */
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface FogRenderOptions {
   fogColor: string;
   lightTint: string;
   width: number;
   height: number;
-  cellSize: number;
-  offsetX: number;
-  offsetY: number;
+  memRadius: number;
+  lightRadius: number;
   activeX: number;
   activeY: number;
   explored: Set<string>;
+  /** Maps an explored key to its physical cell and centre in canvas pixels. */
+  cellOf: (key: string) => FogCell | null;
   /** Identifies the current maze/board instance so a new maze always clears the cache. */
   boardToken: unknown;
 }
@@ -50,11 +58,11 @@ function createLightBrush(size = 128): HTMLCanvasElement {
 }
 
 /**
- * Incremental Fog of War compositor for rectangular grid mazes.
+ * Incremental Fog of War compositor shared by all maze renderers.
  * Maintains a persistent explored-history surface and applies the live
  * flashlight on a separate scratch surface each frame so history is never mutated.
  */
-export class GridFogCache {
+export class FogCache {
   private exploredCanvas: HTMLCanvasElement | null = null;
   private scratchCanvas: HTMLCanvasElement | null = null;
   private memBrush: HTMLCanvasElement | null = null;
@@ -64,45 +72,13 @@ export class GridFogCache {
   private lastFogColor = '';
   private lastWidth = 0;
   private lastHeight = 0;
-  private lastCellSize = 0;
-  private lastOffsetX = 0;
-  private lastOffsetY = 0;
+  private lastMemRadius = 0;
   private lastExploredRef: Set<string> | null = null;
 
-  private ensureBrushes() {
-    if (!this.memBrush) this.memBrush = createMemBrush();
-    if (!this.lightBrush) this.lightBrush = createLightBrush();
-  }
-
-  private reset(
-    width: number,
-    height: number,
-    fogColor: string,
-    boardToken: unknown,
-    cellSize: number,
-    offsetX: number,
-    offsetY: number,
-  ) {
-    if (!this.exploredCanvas) {
-      this.exploredCanvas = document.createElement('canvas');
-    }
-    if (!this.scratchCanvas) {
-      this.scratchCanvas = document.createElement('canvas');
-    }
-    if (
-      this.exploredCanvas.width !== width ||
-      this.exploredCanvas.height !== height
-    ) {
-      this.exploredCanvas.width = width;
-      this.exploredCanvas.height = height;
-    }
-    if (
-      this.scratchCanvas.width !== width ||
-      this.scratchCanvas.height !== height
-    ) {
-      this.scratchCanvas.width = width;
-      this.scratchCanvas.height = height;
-    }
+  private reset(opts: FogRenderOptions) {
+    const { width, height, fogColor } = opts;
+    this.exploredCanvas = ensureSizedCanvas(this.exploredCanvas, width, height);
+    this.scratchCanvas = ensureSizedCanvas(this.scratchCanvas, width, height);
 
     const ectx = this.exploredCanvas.getContext('2d');
     if (ectx) {
@@ -112,71 +88,56 @@ export class GridFogCache {
     }
 
     this.stampedCells.clear();
-    this.lastBoardToken = boardToken;
+    this.lastExploredRef = null;
+    this.lastBoardToken = opts.boardToken;
     this.lastFogColor = fogColor;
     this.lastWidth = width;
     this.lastHeight = height;
-    this.lastCellSize = cellSize;
-    this.lastOffsetX = offsetX;
-    this.lastOffsetY = offsetY;
+    this.lastMemRadius = opts.memRadius;
+  }
+
+  /** True when a cell stamped earlier is no longer explored (restart / retarget on the same board). */
+  private lostStampedCell(opts: FogRenderOptions): boolean {
+    const current = new Set<string>();
+    for (const key of opts.explored) {
+      const cell = opts.cellOf(key);
+      if (cell) current.add(cell.id);
+    }
+    if (current.size < this.stampedCells.size) return true;
+    for (const id of this.stampedCells) {
+      if (!current.has(id)) return true;
+    }
+    return false;
   }
 
   draw(ctx: CanvasRenderingContext2D, opts: FogRenderOptions): void {
     const {
-      fogColor,
       lightTint,
       width,
       height,
-      cellSize,
-      offsetX,
-      offsetY,
+      memRadius,
+      lightRadius,
       activeX,
       activeY,
       explored,
-      boardToken,
+      cellOf,
     } = opts;
 
-    this.ensureBrushes();
+    if (!this.memBrush) this.memBrush = createMemBrush();
+    if (!this.lightBrush) this.lightBrush = createLightBrush();
 
-    let needsRebuild =
+    const needsRebuild =
       !this.exploredCanvas ||
-      this.lastBoardToken !== boardToken ||
-      this.lastFogColor !== fogColor ||
+      this.lastBoardToken !== opts.boardToken ||
+      this.lastFogColor !== opts.fogColor ||
       this.lastWidth !== width ||
       this.lastHeight !== height ||
-      this.lastCellSize !== cellSize ||
-      this.lastOffsetX !== offsetX ||
-      this.lastOffsetY !== offsetY;
+      this.lastMemRadius !== memRadius ||
+      (explored !== this.lastExploredRef &&
+        this.lastExploredRef !== null &&
+        this.lostStampedCell(opts));
 
-    // Detect restart/retarget on the same board (even when explored.size matches)
-    if (!needsRebuild && explored !== this.lastExploredRef) {
-      if (explored.size < this.stampedCells.size) {
-        needsRebuild = true;
-      } else {
-        // Verify every previously stamped physical cell is still represented in explored
-        const currentPhysical = new Set<string>();
-        for (const key of explored) {
-          const comma1 = key.indexOf(',');
-          const comma2 = key.indexOf(',', comma1 + 1);
-          const cellKey = comma2 === -1 ? key : key.slice(0, comma2);
-          currentPhysical.add(cellKey);
-        }
-        if (currentPhysical.size < this.stampedCells.size) {
-          needsRebuild = true;
-        } else {
-          for (const prevKey of this.stampedCells) {
-            if (!currentPhysical.has(prevKey)) {
-              needsRebuild = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    if (needsRebuild) {
-      this.reset(width, height, fogColor, boardToken, cellSize, offsetX, offsetY);
-    }
+    if (needsRebuild) this.reset(opts);
 
     const exploredCanvas = this.exploredCanvas!;
     const scratchCanvas = this.scratchCanvas!;
@@ -184,25 +145,18 @@ export class GridFogCache {
     const sctx = scratchCanvas.getContext('2d');
     if (!ectx || !sctx) return;
 
-    // Stamp only newly explored physical cells (over & under of a bridge count as one cell)
-    if (needsRebuild || explored !== this.lastExploredRef) {
-      const memRadius = cellSize * 1.65;
+    // Stamp only newly explored physical cells
+    if (explored !== this.lastExploredRef) {
       const memDia = memRadius * 2;
       ectx.globalCompositeOperation = 'destination-out';
       for (const key of explored) {
-        const comma1 = key.indexOf(',');
-        const comma2 = key.indexOf(',', comma1 + 1);
-        const cellKey = comma2 === -1 ? key : key.slice(0, comma2);
-        if (this.stampedCells.has(cellKey)) continue;
-        this.stampedCells.add(cellKey);
-        const r = Number(cellKey.slice(0, comma1));
-        const c = Number(cellKey.slice(comma1 + 1));
-        const cx = offsetX + (c + 0.5) * cellSize;
-        const cy = offsetY + (r + 0.5) * cellSize;
+        const cell = cellOf(key);
+        if (!cell || this.stampedCells.has(cell.id)) continue;
+        this.stampedCells.add(cell.id);
         ectx.drawImage(
-          this.memBrush!,
-          cx - memRadius,
-          cy - memRadius,
+          this.memBrush,
+          cell.x - memRadius,
+          cell.y - memRadius,
           memDia,
           memDia,
         );
@@ -214,11 +168,10 @@ export class GridFogCache {
     sctx.globalCompositeOperation = 'copy';
     sctx.drawImage(exploredCanvas, 0, 0);
 
-    const lightRadius = cellSize * 2.8;
     const lightDia = lightRadius * 2;
     sctx.globalCompositeOperation = 'destination-out';
     sctx.drawImage(
-      this.lightBrush!,
+      this.lightBrush,
       activeX - lightRadius,
       activeY - lightRadius,
       lightDia,
@@ -247,6 +200,19 @@ export class GridFogCache {
   }
 }
 
+const MAX_GAME_DPR_FINE = 2;
+const MAX_GAME_DPR_COARSE = 1.5;
+
+export function getMaxGameDpr(): number {
+  if (
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(pointer: coarse)').matches
+  ) {
+    return MAX_GAME_DPR_COARSE;
+  }
+  return MAX_GAME_DPR_FINE;
+}
+
 export function ensureSizedCanvas(
   existing: HTMLCanvasElement | null,
   width: number,
@@ -272,5 +238,42 @@ export function paintCorridorFloor(
   ctx.globalAlpha = CORRIDOR_FLOOR_OPACITY;
   ctx.fillStyle = theme.corridorFloor;
   ctx.fillRect(offsetX, offsetY, width, height);
+  ctx.restore();
+}
+
+export interface LiveTipStyle {
+  color: string;
+  width: number;
+  alpha: number;
+  /** Trail joints this stroke must leave out because another stroke already draws them. */
+  cutouts: Array<{ x: number; y: number }>;
+  bounds: { x: number; y: number; width: number; height: number };
+}
+
+/** Strokes the live trail tip given as an SVG path string. */
+export function drawLiveTipCanvas(
+  ctx: CanvasRenderingContext2D,
+  d: string,
+  style: LiveTipStyle,
+): void {
+  if (!d) return;
+  ctx.save();
+  if (style.cutouts.length > 0) {
+    const { bounds } = style;
+    const r = style.width / 2;
+    const clip = new Path2D();
+    clip.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+    for (const c of style.cutouts) {
+      clip.moveTo(c.x + r, c.y);
+      clip.arc(c.x, c.y, r, 0, Math.PI * 2);
+    }
+    ctx.clip(clip, 'evenodd');
+  }
+  ctx.globalAlpha = style.alpha;
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = style.width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke(new Path2D(d));
   ctx.restore();
 }

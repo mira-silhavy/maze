@@ -216,12 +216,6 @@ export function drawMarbleCanvas(
     }
     ctx.restore();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#7dd3fc';
-    ctx.lineWidth = Math.max(1, r * 0.095);
-    ctx.globalAlpha = baseAlpha * 0.9;
-    ctx.stroke();
     drawGlassSpecularCanvas(ctx, r, baseAlpha * 0.88);
   } else if (theme.id === 'hologram') {
     // Wireframe Holo-Globe
@@ -258,13 +252,6 @@ export function drawMarbleCanvas(
     ctx.arc(0, 0, Math.max(1.5, r * 0.14), 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#67e8f9';
-    ctx.lineWidth = Math.max(1.1, r * 0.095);
-    ctx.globalAlpha = baseAlpha * 0.95;
-    ctx.stroke();
   } else if (theme.id === 'forest') {
     // Amber Firefly Marble
     const base = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.06, 0, 0, r);
@@ -298,12 +285,6 @@ export function drawMarbleCanvas(
     draw3DDotCanvas(ctx, r * 0.72, w, Math.max(1, r * 0.11), '#4ade80', baseAlpha * 0.82);
     ctx.restore();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#fcd34d';
-    ctx.lineWidth = Math.max(1, r * 0.085);
-    ctx.globalAlpha = baseAlpha * 0.88;
-    ctx.stroke();
     drawGlassSpecularCanvas(ctx, r, baseAlpha * 0.9);
   } else if (theme.id === 'pirate') {
     // Brass Compass Sphere
@@ -331,12 +312,6 @@ export function drawMarbleCanvas(
     draw3DDotCanvas(ctx, r * 0.82, negV, Math.max(0.8, r * 0.09), '#fef08a', baseAlpha);
     ctx.restore();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = Math.max(1.1, r * 0.095);
-    ctx.globalAlpha = baseAlpha * 0.9;
-    ctx.stroke();
     drawGlassSpecularCanvas(ctx, r, baseAlpha * 0.82);
   } else {
     // Paper: Labyrinth Steel Bearing
@@ -366,12 +341,6 @@ export function drawMarbleCanvas(
     ctx.fillRect(-r, -r, r * 2, r * 2);
     ctx.restore();
 
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = Math.max(1, r * 0.085);
-    ctx.globalAlpha = baseAlpha * 0.9;
-    ctx.stroke();
     drawGlassSpecularCanvas(ctx, r, baseAlpha * 0.96);
   }
 
@@ -711,337 +680,6 @@ export function drawThemedTargetCanvas(
   }
 
   ctx.restore();
-}
-
-function project3DCircleSvgPath(
-  r: number,
-  basisA: Vec3,
-  basisB: Vec3,
-  basisC: Vec3,
-  lat: number,
-): string {
-  const steps = 22;
-  const cosL = Math.cos(lat);
-  const sinL = Math.sin(lat);
-  const parts: string[] = [];
-  let penDown = false;
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const ca = Math.cos(t) * cosL;
-    const cb = Math.sin(t) * cosL;
-    const px = basisA[0] * ca + basisB[0] * cb + basisC[0] * sinL;
-    const py = basisA[1] * ca + basisB[1] * cb + basisC[1] * sinL;
-    const pz = basisA[2] * ca + basisB[2] * cb + basisC[2] * sinL;
-    if (pz > -0.05) {
-      parts.push(
-        `${penDown ? 'L' : 'M'} ${(px * r).toFixed(2)} ${(py * r).toFixed(2)}`,
-      );
-      penDown = true;
-    } else {
-      penDown = false;
-    }
-  }
-  return parts.join(' ');
-}
-
-export function MarbleSvg({
-  x,
-  y,
-  r = 9.5,
-  theme,
-  idPrefix,
-  u = [1, 0, 0],
-  v = [0, 1, 0],
-  elevated = false,
-}: {
-  x: number;
-  y: number;
-  r?: number;
-  theme: MazeTheme;
-  idPrefix: string;
-  u?: Vec3;
-  v?: Vec3;
-  elevated?: boolean;
-}) {
-  const gradId = `${idPrefix}-marble-grad-${theme.id}`;
-  const coreId = `${idPrefix}-marble-core-${theme.id}`;
-  const clipId = `${idPrefix}-marble-clip-${theme.id}`;
-  const w = crossVec3(u, v);
-  const negU: Vec3 = [-u[0], -u[1], -u[2]];
-  const negV: Vec3 = [-v[0], -v[1], -v[2]];
-  const rad = elevated ? r * 1.09 : r;
-
-  const equatorD = project3DCircleSvgPath(rad * 0.9, u, w, v, 0);
-  const meridianAD = project3DCircleSvgPath(rad * 0.9, u, v, w, 0);
-  const meridianBD = project3DCircleSvgPath(rad * 0.86, v, w, u, 0.2);
-
-  const renderDot = (pt: Vec3, dist: number, dotR: number, fill: string, opacity = 0.92) => {
-    if (pt[2] <= 0.05) return null;
-    const depth = Math.min(1, pt[2]);
-    return (
-      <circle
-        cx={(pt[0] * rad * dist).toFixed(2)}
-        cy={(pt[1] * rad * dist).toFixed(2)}
-        r={(dotR * (0.55 + 0.45 * depth)).toFixed(2)}
-        fill={fill}
-        opacity={opacity * (0.35 + 0.65 * depth)}
-      />
-    );
-  };
-
-  const rimColor =
-    theme.id === 'space'
-      ? '#7dd3fc'
-      : theme.id === 'hologram'
-        ? '#67e8f9'
-        : theme.id === 'forest'
-          ? '#fcd34d'
-          : theme.id === 'pirate'
-            ? '#78350f'
-            : '#334155';
-
-  return (
-    <g transform={`translate(${x.toFixed(2)} ${y.toFixed(2)})`}>
-      <defs>
-        {theme.id === 'space' && (
-          <>
-            <radialGradient id={gradId} cx="35%" cy="35%" r="70%">
-              <stop offset="0%" stopColor="#1e3a8a" />
-              <stop offset="60%" stopColor="#0f172a" />
-              <stop offset="100%" stopColor="#020617" />
-            </radialGradient>
-            <radialGradient id={coreId} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ffffff" />
-              <stop offset="35%" stopColor="#7dd3fc" />
-              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-            </radialGradient>
-          </>
-        )}
-        {theme.id === 'hologram' && (
-          <radialGradient id={gradId} cx="50%" cy="50%" r="60%">
-            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.28" />
-            <stop offset="75%" stopColor="#061529" stopOpacity="0.92" />
-            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.42" />
-          </radialGradient>
-        )}
-        {theme.id === 'forest' && (
-          <>
-            <radialGradient id={gradId} cx="32%" cy="32%" r="70%">
-              <stop offset="0%" stopColor="#fef3c7" />
-              <stop offset="38%" stopColor="#f59e0b" />
-              <stop offset="82%" stopColor="#b45309" />
-              <stop offset="100%" stopColor="#451a03" />
-            </radialGradient>
-            <radialGradient id={coreId} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#fef9c3" />
-              <stop offset="60%" stopColor="#facc15" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="#facc15" stopOpacity="0" />
-            </radialGradient>
-          </>
-        )}
-        {theme.id === 'pirate' && (
-          <radialGradient id={gradId} cx="32%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#fef9c3" />
-            <stop offset="38%" stopColor="#f59e0b" />
-            <stop offset="82%" stopColor="#92400e" />
-            <stop offset="100%" stopColor="#451a03" />
-          </radialGradient>
-        )}
-        {theme.id === 'paper' && (
-          <radialGradient id={gradId} cx="32%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="30%" stopColor="#e2e8f0" />
-            <stop offset="65%" stopColor="#64748b" />
-            <stop offset="90%" stopColor="#1e293b" />
-            <stop offset="100%" stopColor="#475569" />
-          </radialGradient>
-        )}
-        <clipPath id={clipId}>
-          <circle cx="0" cy="0" r={rad * 0.96} />
-        </clipPath>
-      </defs>
-
-      <ellipse
-        cx={elevated ? rad * 0.26 : rad * 0.14}
-        cy={elevated ? rad * 0.34 : rad * 0.2}
-        rx={rad * (elevated ? 1.04 : 0.94)}
-        ry={rad * (elevated ? 0.92 : 0.84)}
-        fill={theme.isLight ? 'rgba(15,23,42,0.26)' : 'rgba(0,0,0,0.4)'}
-      />
-      <circle
-        cx="0"
-        cy="0"
-        r={rad}
-        fill={`url(#${gradId})`}
-        stroke={rimColor}
-        strokeWidth={Math.max(1, rad * 0.1)}
-      />
-
-      <g clipPath={`url(#${clipId})`}>
-        {theme.id === 'space' && (
-          <>
-            <circle cx="0" cy="0" r={rad * 0.65} fill={`url(#${coreId})`} />
-            {equatorD && (
-              <>
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#38bdf8"
-                  strokeWidth={Math.max(1.3, rad * 0.14)}
-                  strokeLinecap="round"
-                />
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#e0f2fe"
-                  strokeWidth={Math.max(0.6, rad * 0.055)}
-                  strokeLinecap="round"
-                />
-              </>
-            )}
-            {meridianBD && (
-              <path
-                d={meridianBD}
-                fill="none"
-                stroke="#c084fc"
-                strokeWidth={Math.max(1, rad * 0.11)}
-                strokeLinecap="round"
-                opacity="0.82"
-              />
-            )}
-            {renderDot(u, 0.8, rad * 0.1, '#f0f9ff')}
-            {renderDot(negU, 0.8, rad * 0.1, '#f0f9ff')}
-            {renderDot(v, 0.8, rad * 0.1, '#f0f9ff')}
-          </>
-        )}
-
-        {theme.id === 'hologram' && (
-          <>
-            {equatorD && (
-              <path
-                d={equatorD}
-                fill="none"
-                stroke="#67e8f9"
-                strokeWidth={Math.max(1.1, rad * 0.1)}
-                strokeLinecap="round"
-              />
-            )}
-            {meridianAD && (
-              <path
-                d={meridianAD}
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth={Math.max(0.8, rad * 0.07)}
-                strokeLinecap="round"
-                opacity="0.75"
-              />
-            )}
-            {meridianBD && (
-              <path
-                d={meridianBD}
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth={Math.max(0.8, rad * 0.07)}
-                strokeLinecap="round"
-                opacity="0.75"
-              />
-            )}
-            <circle cx="0" cy="0" r={Math.max(1.4, rad * 0.14)} fill="#ecfeff" />
-          </>
-        )}
-
-        {theme.id === 'forest' && (
-          <>
-            <circle cx="0" cy="0" r={rad * 0.58} fill={`url(#${coreId})`} />
-            {equatorD && (
-              <path
-                d={equatorD}
-                fill="none"
-                stroke="#fde047"
-                strokeWidth={Math.max(1.4, rad * 0.17)}
-                strokeLinecap="round"
-                opacity="0.65"
-              />
-            )}
-            {renderDot(v, 0.74, rad * 0.14, '#4ade80', 0.88)}
-            {renderDot(negV, 0.74, rad * 0.13, '#86efac', 0.88)}
-            {renderDot(u, 0.72, rad * 0.11, '#fef08a', 0.95)}
-            {renderDot(w, 0.72, rad * 0.11, '#4ade80', 0.82)}
-          </>
-        )}
-
-        {theme.id === 'pirate' && (
-          <>
-            {equatorD && (
-              <>
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#78350f"
-                  strokeWidth={Math.max(1.5, rad * 0.18)}
-                  strokeLinecap="round"
-                />
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#fef08a"
-                  strokeWidth={Math.max(0.7, rad * 0.055)}
-                  strokeDasharray="2 2"
-                />
-              </>
-            )}
-            {meridianAD && (
-              <path
-                d={meridianAD}
-                fill="none"
-                stroke="#dc2626"
-                strokeWidth={Math.max(1.2, rad * 0.12)}
-                strokeLinecap="round"
-              />
-            )}
-            {renderDot(v, 0.8, rad * 0.22, '#dc2626', 0.95)}
-            {renderDot(v, 0.8, rad * 0.09, '#fef08a', 1)}
-            {renderDot(negV, 0.8, rad * 0.22, '#1e3a8a', 0.95)}
-            {renderDot(negV, 0.8, rad * 0.09, '#fef08a', 1)}
-          </>
-        )}
-
-        {theme.id === 'paper' && (
-          <>
-            {equatorD && (
-              <>
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth={Math.max(1.3, rad * 0.14)}
-                  strokeLinecap="round"
-                />
-                <path
-                  d={equatorD}
-                  fill="none"
-                  stroke="#93c5fd"
-                  strokeWidth={Math.max(0.6, rad * 0.055)}
-                  strokeLinecap="round"
-                />
-              </>
-            )}
-          </>
-        )}
-      </g>
-
-      {theme.id !== 'hologram' && (
-        <ellipse
-          cx={-rad * 0.3}
-          cy={-rad * 0.32}
-          rx={rad * 0.25}
-          ry={rad * 0.13}
-          transform="rotate(-45)"
-          fill="rgba(255,255,255,0.9)"
-        />
-      )}
-    </g>
-  );
 }
 
 export function ThemedPlayerSvg({
