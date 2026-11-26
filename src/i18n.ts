@@ -98,6 +98,8 @@ export interface Messages {
   focusBrowserFullscreenExit: string;
   focusMenu: string;
   focusMenuTitle: string;
+  menuCollapse: string;
+  menuExpand: string;
 
   // Marble tilt bar
   tiltEnable: string;
@@ -265,6 +267,8 @@ const CS: Messages = {
   focusBrowserFullscreenExit: 'Ukončit celou obrazovku prohlížeče',
   focusMenu: 'Menu',
   focusMenuTitle: 'Zobrazit menu (Esc)',
+  menuCollapse: 'Skrýt menu',
+  menuExpand: 'Zobrazit menu',
 
   tiltEnable: 'Povolit náklon tabletu',
   tiltDenied:
@@ -436,6 +440,8 @@ const EN: Messages = {
   focusBrowserFullscreenExit: 'Exit browser full screen',
   focusMenu: 'Menu',
   focusMenuTitle: 'Show menu (Esc)',
+  menuCollapse: 'Hide menu',
+  menuExpand: 'Show menu',
 
   tiltEnable: 'Enable tablet tilt',
   tiltDenied:
