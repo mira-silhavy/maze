@@ -153,7 +153,7 @@ describe('bridge depth', () => {
       { from: c, to: d },
     ]);
     expect(leaving.upper.parts.map((x) => x.to)).toEqual([c]);
-    expect(leaving.upper.cutouts).toEqual([over, c]);
+    expect(leaving.upper.cutouts).toEqual([c]);
     expect(leaving.lower.parts.map((x) => x.to)).toEqual([d]);
     expect(leaving.lower.cutouts).toEqual([]);
     // Marble climbing onto the bridge from a: committed p→a (lower), tip a→over (upper).
@@ -162,7 +162,7 @@ describe('bridge depth', () => {
     expect(climbing.lower.cutouts).toEqual([]);
   });
 
-  it('leaves no hole where two tip parts of one layer meet', () => {
+  it('cuts no joint out of a tip that stays in the committed trail layer', () => {
     const p = { row: 0, col: 0 };
     const a = { row: 0, col: 1 };
     const b = { row: 1, col: 1 };
@@ -171,7 +171,7 @@ describe('bridge depth', () => {
       { from: a, to: b },
       { from: b, to: c },
     ]);
-    expect(tip.lower.cutouts).toEqual([a]);
+    expect(tip.lower.cutouts).toEqual([]);
     expect(tip.lower.parts).toHaveLength(2);
   });
 });

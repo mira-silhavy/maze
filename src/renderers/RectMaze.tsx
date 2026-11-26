@@ -494,22 +494,16 @@ export function RectMaze({
       }
     }
 
-    // Committed ground / underpass trail (in Marble Mode the last segment lives on the live layers)
-    const trail = layerPath(
-      curTrail,
-      curMarbleMode ? curTrail.length - 2 : curTrail.length - 1,
+    // Ground / underpass trail (in Marble Mode the whole trail is stroked with its tip on the live layers)
+    const trail = layerPath(curTrail, curMarbleMode ? 0 : curTrail.length - 1);
+    strokeTrailRuns(
+      ctx,
+      trail.lower.map((run) => run.map(centerOf)),
+      cellSize,
+      offsetX,
+      offsetY,
+      curTheme,
     );
-    const drawCommittedTrail = () =>
-      strokeTrailRuns(
-        ctx,
-        trail.lower.map((run) => run.map(centerOf)),
-        cellSize,
-        offsetX,
-        offsetY,
-        curTheme,
-      );
-    // The live tip is drawn above the markers, so a marble trail goes above them too.
-    if (!curMarbleMode) drawCommittedTrail();
 
     // Start cell highlight / cross in collect mode
     const startCenterX = offsetX + (curMaze.start.col + 0.5) * cellSize;
@@ -568,8 +562,6 @@ export function RectMaze({
         drawThemedTargetCanvas(ctx, cx, cy, cellSize, curTheme, isCollected);
       }
     }
-
-    if (curMarbleMode) drawCommittedTrail();
 
     // Optional hint path (ground / underpass part)
     const hint = layerPath(curHintPath, curHintPath.length - 1);
@@ -683,18 +675,24 @@ export function RectMaze({
       }
     };
 
-    // Live trail tip (Marble Mode only): last segment up to the marble, then the start of the next
+    // Marble Mode trail: committed runs and the live tip in one stroke per layer, so their joint has no seam
     if (marble) {
+      const committed = layerPath(curTrail, curTrail.length - 2);
       const tip = layerTipParts(curTrail, rectTipParts(curMaze, marble, curTrail));
       for (const layer of ['lower', 'upper'] as const) {
         strokeTrailRuns(
           layers[layer],
-          tip[layer].parts.map((part) => part.coords),
+          [
+            ...committed[layer].map((run) => run.map(centerOf)),
+            ...tip[layer].parts.map((part) => part.coords),
+          ],
           cellSize,
           offsetX,
           offsetY,
           curTheme,
-          tip[layer].cutouts.map(centerOf),
+          [...(layer === 'upper' ? committed.upperCutouts : []), ...tip[layer].cutouts].map(
+            centerOf,
+          ),
         );
       }
     }

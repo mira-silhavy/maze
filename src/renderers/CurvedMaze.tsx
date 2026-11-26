@@ -34,7 +34,7 @@ import {
   type CurvedBridgeCorner,
   type SvgBounds,
 } from '../themes/sceneSvg';
-import { drawLiveTipCanvas } from './canvasLayers';
+import { drawLiveTrailCanvas } from './canvasLayers';
 import { useSvgFogCanvas } from './useSvgFogCanvas';
 import { useViewBoxCanvas } from './viewBoxCanvas';
 
@@ -431,14 +431,20 @@ export function CurvedMaze({
 
     const tip = layerTipParts(trail, curvedLiveTipParts(maze, trail, body));
     for (const layer of ['lower', 'upper'] as const) {
-      drawLiveTipCanvas(
+      drawLiveTrailCanvas(
         layers[layer],
-        tip[layer].parts.map((part) => part.d).join(' '),
+        [
+          layer === 'upper' ? committedTrail.upperD : committedTrail.lowerD,
+          ...tip[layer].parts.map((part) => part.d),
+        ].join(' '),
         {
           color: theme.pencilLine,
           width: trailWidth,
           alpha: trailOpacity,
-          cutouts: tip[layer].cutouts.map(nodeCenter),
+          cutouts: [
+            ...(layer === 'upper' ? committedTrail.upperCutouts : []),
+            ...tip[layer].cutouts.map(nodeCenter),
+          ],
           bounds: viewBox,
         },
       );
@@ -631,8 +637,6 @@ export function CurvedMaze({
             })
           )}
 
-          {showOverlay && trailStroke(committedTrail.lowerD)}
-
           {!showOverlay && playerDepth.layer === 'lower' && glowedPlayer('curved-glow')}
         </svg>
 
@@ -687,7 +691,7 @@ export function CurvedMaze({
                 />
               ))}
             </g>
-            {trailStroke(committedTrail.upperD, 'curved-trail-top-clip')}
+            {!showOverlay && trailStroke(committedTrail.upperD, 'curved-trail-top-clip')}
             {hintStroke(committedHint.upperD, 'curved-hint-top-clip')}
             {!showOverlay &&
               playerDepth.layer === 'upper' &&
