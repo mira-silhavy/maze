@@ -50,8 +50,9 @@ export interface TipPart {
 
 /**
  * Sorts the live tip parts (last trail segment up to the marble, then the start of the
- * next one) into layers. Each part meets the previous segment at its `from` node; that
- * joint is drawn once: by the earlier stroke when both share a layer, else by the ground one.
+ * next one) into layers. Each layer's tip is stroked together with that layer's committed
+ * trail, so a joint inside one layer needs no cutout; a joint where the layer changes is
+ * drawn by the ground stroke and left out of the upper one.
  */
 export function layerTipParts<T extends TipPart>(
   trail: Position[],
@@ -65,14 +66,12 @@ export function layerTipParts<T extends TipPart>(
     trail.length >= 3
       ? segmentLayer(trail[trail.length - 3], trail[trail.length - 2])
       : null;
-  parts.forEach((part, i) => {
+  for (const part of parts) {
     const layer = segmentLayer(part.from, part.to);
     out[layer].parts.push(part);
-    // Tip parts of one layer are stroked together, so their shared joint needs no cutout.
-    const sharedStroke = i > 0 && layer === prevLayer;
-    if (prevLayer && !sharedStroke) out[layer === prevLayer ? layer : 'upper'].cutouts.push(part.from);
+    if (prevLayer && layer !== prevLayer) out.upper.cutouts.push(part.from);
     prevLayer = layer;
-  });
+  }
   return out;
 }
 

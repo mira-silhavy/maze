@@ -250,8 +250,8 @@ export interface LiveTipStyle {
   bounds: { x: number; y: number; width: number; height: number };
 }
 
-/** Strokes the live trail tip given as an SVG path string. */
-export function drawLiveTipCanvas(
+/** Strokes the live trail (committed part and tip) given as an SVG path string. */
+export function drawLiveTrailCanvas(
   ctx: CanvasRenderingContext2D,
   d: string,
   style: LiveTipStyle,

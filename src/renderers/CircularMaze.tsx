@@ -15,7 +15,7 @@ import {
 } from '../themes/art';
 import { CORRIDOR_FLOOR_OPACITY, type MazeTheme } from '../themes/catalog';
 import { GlowFilterSvg, ThemedWallPathSvg } from '../themes/sceneSvg';
-import { drawLiveTipCanvas } from './canvasLayers';
+import { drawLiveTrailCanvas } from './canvasLayers';
 import { useSvgFogCanvas } from './useSvgFogCanvas';
 import { useViewBoxCanvas } from './viewBoxCanvas';
 
@@ -262,14 +262,6 @@ export function CircularMaze({
   const activeY = marbleBody
     ? marbleBody.y * RING_STEP
     : playerCell.y * RING_STEP;
-  const tipJoin = useMemo(() => {
-    if (!marbleMode || trail.length < 3) return null;
-    const prevCell = maze.cells.get(trail[trail.length - 2]);
-    return prevCell
-      ? { x: prevCell.x * RING_STEP, y: prevCell.y * RING_STEP }
-      : null;
-  }, [marbleMode, trail, maze]);
-
   const showOverlay = marbleMode && Boolean(marbleRef);
   const trailOpacity = theme.isLight ? 0.85 : 0.8;
 
@@ -311,11 +303,12 @@ export function CircularMaze({
     const frame = live.begin();
     if (!frame) return;
     frame.useViewBoxUnits();
-    drawLiveTipCanvas(frame.ctx, buildPolarLiveTipD(maze, trail, body), {
+    const tipD = buildPolarLiveTipD(maze, trail, body);
+    drawLiveTrailCanvas(frame.ctx, `${staticPencilPathD} ${tipD}`.trim(), {
       color: theme.pencilLine,
       width: 6.5,
       alpha: trailOpacity,
-      cutouts: tipJoin ? [tipJoin] : [],
+      cutouts: [],
       bounds: viewBoxRect,
     });
     drawMarbleCanvas(frame.ctx, px, py, POLAR_MARBLE_RADIUS, theme, {
@@ -444,8 +437,6 @@ export function CircularMaze({
               );
             })
           )}
-
-          {showOverlay && pencilLine}
 
           {/* Polar walls */}
           <ThemedWallPathSvg
