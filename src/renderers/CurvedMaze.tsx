@@ -628,7 +628,7 @@ export function CurvedMaze({
                   key={key}
                   x={pt.x}
                   y={pt.y}
-                  r={9.5}
+                  r={7.5}
                   theme={theme}
                   collected={isCollected}
                   glowFilter={theme.isLight ? undefined : 'url(#curved-glow)'}
