@@ -592,3 +592,16 @@ export const ThemedCurvedBridgeOverlaySvg = memo(
     </g>
   );
 });
+
+/** Soft glow used by dark themes: blurred copy merged under the source graphic. */
+export function GlowFilterSvg({ id }: { id: string }) {
+  return (
+    <filter id={id} x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  );
+}

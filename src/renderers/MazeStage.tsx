@@ -152,9 +152,7 @@ export const MazeStage = memo(function MazeStage({
           dispatch({ type: 'move', dx: step.dx, dy: step.dy });
         }
 
-        if (result.enteredCells.length === 0) {
-          stageDrawRef.current?.();
-        }
+        stageDrawRef.current?.();
       } else {
         const current =
           polarMarbleRef.current ??
@@ -180,9 +178,7 @@ export const MazeStage = memo(function MazeStage({
           dispatch({ type: 'move', dx: step.dx, dy: step.dy });
         }
 
-        if (result.enteredCells.length === 0) {
-          stageDrawRef.current?.();
-        }
+        stageDrawRef.current?.();
       }
 
       rafId = window.requestAnimationFrame(frame);

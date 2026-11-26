@@ -2,7 +2,6 @@ import type {
   Axis,
   Cell,
   Direction,
-  Level,
   Maze,
   MazeAlgorithm,
   MazeGenerateOptions,
@@ -474,18 +473,6 @@ export function cellPositions(cell: Cell): Position[] {
         { row, col, level: 'under' },
       ]
     : [{ row, col }];
-}
-
-export function pathThrough(
-  path: Position[],
-  cell: Cell,
-  level: Level,
-): Position[][] {
-  return path.flatMap((pos, i) =>
-    pos.row === cell.row && pos.col === cell.col && pos.level === level
-      ? [path.slice(Math.max(0, i - 1), i + 2)]
-      : [],
-  );
 }
 
 export function corridorLinks(maze: Maze): Array<[Position, Position]> {

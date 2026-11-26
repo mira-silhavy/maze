@@ -86,6 +86,10 @@ export interface MazeTheme {
 
 export const CORRIDOR_FLOOR_OPACITY = 0.6;
 
+/** Fog of war radii in cell units: remembered area around explored cells, and the live flashlight. */
+export const FOG_MEMORY_RADIUS = 1.65;
+export const FOG_LIGHT_RADIUS = 2.8;
+
 export const MAZE_THEMES: MazeTheme[] = [
   {
     id: 'space',

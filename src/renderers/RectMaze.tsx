@@ -1,9 +1,9 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
+import { layerPath, layerTipParts, marbleDepth } from '../game/bridgeDepth';
 import type { MarbleBody } from '../game/marble';
 import {
   cellPositions,
   gridStep,
-  pathThrough,
   positionKey,
 } from '../maze/grid';
 import type {
@@ -19,7 +19,11 @@ import {
   drawThemedPlayerCanvas,
   drawThemedTargetCanvas,
 } from '../themes/art';
-import type { MazeTheme } from '../themes/catalog';
+import {
+  FOG_LIGHT_RADIUS,
+  FOG_MEMORY_RADIUS,
+  type MazeTheme,
+} from '../themes/catalog';
 import {
   drawThemedBridgeDeckCanvas,
   drawThemedBridgeRailsCanvas,
@@ -27,7 +31,8 @@ import {
 } from '../themes/sceneCanvas';
 import {
   ensureSizedCanvas,
-  GridFogCache,
+  FogCache,
+  getMaxGameDpr,
   paintCorridorFloor,
 } from './canvasLayers';
 
@@ -48,19 +53,6 @@ interface RectMazeProps {
   registerDraw?: (fn: (() => void) | null) => void;
   fogOfWar?: boolean;
   fullScreen?: boolean;
-}
-
-const MAX_GAME_DPR_FINE = 2;
-const MAX_GAME_DPR_COARSE = 1.5;
-
-function getMaxGameDpr(): number {
-  if (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(pointer: coarse)').matches
-  ) {
-    return MAX_GAME_DPR_COARSE;
-  }
-  return MAX_GAME_DPR_FINE;
 }
 
 const CONTAINER_MAX_WIDTH: Record<AspectRatioId, string> = {
@@ -101,8 +93,12 @@ export function RectMaze({
 }: RectMazeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const boardCanvasRef = useRef<HTMLCanvasElement>(null);
-  const liveCanvasRef = useRef<HTMLCanvasElement>(null);
-  const fogCacheRef = useRef<GridFogCache | null>(null);
+  const lowerCanvasRef = useRef<HTMLCanvasElement>(null);
+  const bridgesCanvasRef = useRef<HTMLCanvasElement>(null);
+  const railsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const upperCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fogCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fogCacheRef = useRef<FogCache | null>(null);
   const staticCacheRef = useRef<RectStaticCache>({
     maze: null,
     theme: null,
@@ -322,35 +318,51 @@ export function RectMaze({
     return cache;
   };
 
-  const strokeTrailCoords = (
+  /** Leaves `cutouts` (grid units) out of everything stroked until the matching restore. */
+  const clipOutJoints = (
     ctx: CanvasRenderingContext2D,
-    coords: ReadonlyArray<{ x: number; y: number }>,
+    cutouts: ReadonlyArray<{ x: number; y: number }>,
+    radius: number,
+    cellSize: number,
+    offsetX: number,
+    offsetY: number,
+  ) => {
+    if (cutouts.length === 0) return;
+    const { width, height } = sizeRef.current;
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    for (const c of cutouts) {
+      const x = offsetX + c.x * cellSize;
+      const y = offsetY + c.y * cellSize;
+      ctx.moveTo(x + radius, y);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+    }
+    ctx.clip('evenodd');
+  };
+
+  const strokeTrailRuns = (
+    ctx: CanvasRenderingContext2D,
+    runs: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
     cellSize: number,
     offsetX: number,
     offsetY: number,
     curTheme: MazeTheme,
-    excludeJoin?: { x: number; y: number; width: number; height: number },
+    cutouts: ReadonlyArray<{ x: number; y: number }> = [],
   ) => {
-    if (coords.length < 2) return;
+    if (!runs.some((run) => run.length >= 2)) return;
     const lineWidth = Math.max(2.5, cellSize * 0.22);
     const glowWidth = lineWidth * (curTheme.isLight ? 1.55 : 2.1);
 
     const tracePath = () => {
       ctx.beginPath();
-      for (let i = 0; i < coords.length; i++) {
-        const x = offsetX + coords[i].x * cellSize;
-        const y = offsetY + coords[i].y * cellSize;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      for (const run of runs) {
+        run.forEach((p, i) => {
+          const x = offsetX + p.x * cellSize;
+          const y = offsetY + p.y * cellSize;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
       }
-    };
-
-    const clipOutCap = (radius: number) => {
-      if (!excludeJoin) return;
-      ctx.beginPath();
-      ctx.rect(0, 0, excludeJoin.width, excludeJoin.height);
-      ctx.arc(excludeJoin.x, excludeJoin.y, radius, 0, Math.PI * 2);
-      ctx.clip('evenodd');
     };
 
     ctx.save();
@@ -358,7 +370,7 @@ export function RectMaze({
     ctx.lineJoin = 'round';
 
     ctx.save();
-    clipOutCap(glowWidth / 2);
+    clipOutJoints(ctx, cutouts, glowWidth / 2, cellSize, offsetX, offsetY);
     tracePath();
     ctx.strokeStyle = curTheme.pencilGlow;
     ctx.lineWidth = glowWidth;
@@ -367,7 +379,7 @@ export function RectMaze({
     ctx.restore();
 
     ctx.save();
-    clipOutCap(lineWidth / 2);
+    clipOutJoints(ctx, cutouts, lineWidth / 2, cellSize, offsetX, offsetY);
     tracePath();
     ctx.strokeStyle = curTheme.pencilLine;
     ctx.lineWidth = lineWidth;
@@ -378,90 +390,38 @@ export function RectMaze({
     ctx.restore();
   };
 
-  const strokeHint = (
+  const strokeHintRuns = (
     ctx: CanvasRenderingContext2D,
-    points: Position[],
+    runs: Position[][],
     cellSize: number,
     offsetX: number,
     offsetY: number,
     curTheme: MazeTheme,
+    cutouts: Position[] = [],
   ) => {
-    if (points.length < 2) return;
+    if (runs.length === 0) return;
+    const lineWidth = Math.max(2, cellSize * 0.16);
     ctx.save();
+    clipOutJoints(ctx, cutouts.map(centerOf), lineWidth / 2, cellSize, offsetX, offsetY);
     ctx.beginPath();
     ctx.strokeStyle = curTheme.hintStroke;
-    ctx.lineWidth = Math.max(2, cellSize * 0.16);
+    ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.setLineDash([
       Math.max(3, cellSize * 0.2),
       Math.max(4, cellSize * 0.25),
     ]);
-
-    for (let i = 0; i < points.length; i++) {
-      const x = offsetX + (points[i].col + 0.5) * cellSize;
-      const y = offsetY + (points[i].row + 0.5) * cellSize;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    for (const run of runs) {
+      run.forEach((p, i) => {
+        const x = offsetX + (p.col + 0.5) * cellSize;
+        const y = offsetY + (p.row + 0.5) * cellSize;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
     }
     ctx.stroke();
     ctx.restore();
-  };
-
-  const extendFromCenter = (
-    curMaze: Maze,
-    marble: MarbleBody,
-    cur: Position,
-  ): { x: number; y: number } | null => {
-    const cx = cur.col + 0.5;
-    const cy = cur.row + 0.5;
-    const relX = marble.x - cx;
-    const relY = marble.y - cy;
-    if (Math.abs(relX) >= Math.abs(relY)) {
-      if (relX > 0.02 && gridStep(curMaze, cur, 'right')) {
-        return { x: marble.x, y: cy };
-      }
-      if (relX < -0.02 && gridStep(curMaze, cur, 'left')) {
-        return { x: marble.x, y: cy };
-      }
-    } else {
-      if (relY > 0.02 && gridStep(curMaze, cur, 'bottom')) {
-        return { x: cx, y: marble.y };
-      }
-      if (relY < -0.02 && gridStep(curMaze, cur, 'top')) {
-        return { x: cx, y: marble.y };
-      }
-    }
-    return null;
-  };
-
-  const projectTrailEnd = (
-    curMaze: Maze,
-    marble: MarbleBody,
-    prev: Position,
-    cur: Position,
-  ): Array<{ x: number; y: number }> => {
-    const dx = cur.col - prev.col;
-    const dy = cur.row - prev.row;
-    const proj = Math.max(
-      0,
-      Math.min(
-        1,
-        (marble.x - (prev.col + 0.5)) * dx +
-          (marble.y - (prev.row + 0.5)) * dy,
-      ),
-    );
-    const pts = [
-      {
-        x: prev.col + 0.5 + dx * proj,
-        y: prev.row + 0.5 + dy * proj,
-      },
-    ];
-    if (proj >= 0.999) {
-      const ext = extendFromCenter(curMaze, marble, cur);
-      if (ext) pts.push(ext);
-    }
-    return pts;
   };
 
   const drawBoardRef = useRef<() => void>(() => {});
@@ -534,19 +494,22 @@ export function RectMaze({
       }
     }
 
-    // Committed trail (in Marble Mode ends at trail[n-2]; last segment lives on live canvas)
-    const committedTrail =
-      curMarbleMode && curTrail.length > 0 ? curTrail.slice(0, -1) : curTrail;
-    if (committedTrail.length >= 2) {
-      strokeTrailCoords(
+    // Committed ground / underpass trail (in Marble Mode the last segment lives on the live layers)
+    const trail = layerPath(
+      curTrail,
+      curMarbleMode ? curTrail.length - 2 : curTrail.length - 1,
+    );
+    const drawCommittedTrail = () =>
+      strokeTrailRuns(
         ctx,
-        committedTrail.map((pos) => ({ x: pos.col + 0.5, y: pos.row + 0.5 })),
+        trail.lower.map((run) => run.map(centerOf)),
         cellSize,
         offsetX,
         offsetY,
         curTheme,
       );
-    }
+    // The live tip is drawn above the markers, so a marble trail goes above them too.
+    if (!curMarbleMode) drawCommittedTrail();
 
     // Start cell highlight / cross in collect mode
     const startCenterX = offsetX + (curMaze.start.col + 0.5) * cellSize;
@@ -606,71 +569,57 @@ export function RectMaze({
       }
     }
 
-    // Optional hint path
-    if (curHintPath.length > 1) {
-      strokeHint(ctx, curHintPath, cellSize, offsetX, offsetY, curTheme);
-    }
+    if (curMarbleMode) drawCommittedTrail();
+
+    // Optional hint path (ground / underpass part)
+    const hint = layerPath(curHintPath, curHintPath.length - 1);
+    strokeHintRuns(ctx, hint.lower, cellSize, offsetX, offsetY, curTheme);
 
     // Cached maze walls
     if (cache.wallsCanvas) {
       ctx.drawImage(cache.wallsCanvas, 0, 0, innerWidth, innerHeight);
     }
 
-    // Cached bridge decks -> clipped committed over-trail & over-hint -> cached bridge rails
-    if (cache.bridges.length > 0) {
-      if (cache.bridgeDecksCanvas) {
-        ctx.drawImage(cache.bridgeDecksCanvas, 0, 0, innerWidth, innerHeight);
-      }
-
-      const half = cellSize / 2;
-      const overhang = cellSize * 0.14;
-      const deckW = cellSize + overhang * 2;
-
-      for (const cell of cache.bridges) {
-        const overTrails = pathThrough(committedTrail, cell, 'over');
-        const overHints = pathThrough(curHintPath, cell, 'over');
-        if (overTrails.length === 0 && overHints.length === 0) continue;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.save();
-        ctx.translate(
-          offsetX + (cell.col + 0.5) * cellSize,
-          offsetY + (cell.row + 0.5) * cellSize,
-        );
-        if (cell.bridge === 'vertical') ctx.rotate(Math.PI / 2);
-        ctx.rect(-half - overhang, -half, deckW, cellSize);
-        ctx.restore();
-        ctx.clip();
-
-        for (const part of overTrails) {
-          strokeTrailCoords(
-            ctx,
-            part.map((pos) => ({ x: pos.col + 0.5, y: pos.row + 0.5 })),
-            cellSize,
-            offsetX,
-            offsetY,
-            curTheme,
-          );
-        }
-        for (const part of overHints) {
-          strokeHint(ctx, part, cellSize, offsetX, offsetY, curTheme);
-        }
-        ctx.restore();
-      }
-
-      if (cache.bridgeRailsCanvas) {
-        ctx.drawImage(cache.bridgeRailsCanvas, 0, 0, innerWidth, innerHeight);
-      }
+    // Bridges layer: cached decks -> bridge-top trail & hint. Rails get their own layer above the live ones.
+    const bctx = bridgesCanvasRef.current?.getContext('2d');
+    const rctx = railsCanvasRef.current?.getContext('2d');
+    if (!bctx || !rctx) return;
+    for (const c of [bctx, rctx]) {
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.clearRect(0, 0, innerWidth, innerHeight);
+    }
+    if (cache.bridges.length === 0) return;
+    if (cache.bridgeDecksCanvas) {
+      bctx.drawImage(cache.bridgeDecksCanvas, 0, 0, innerWidth, innerHeight);
+    }
+    strokeTrailRuns(
+      bctx,
+      trail.upper.map((run) => run.map(centerOf)),
+      cellSize,
+      offsetX,
+      offsetY,
+      curTheme,
+      trail.upperCutouts.map(centerOf),
+    );
+    strokeHintRuns(
+      bctx,
+      hint.upper,
+      cellSize,
+      offsetX,
+      offsetY,
+      curTheme,
+      hint.upperCutouts,
+    );
+    if (cache.bridgeRailsCanvas) {
+      rctx.drawImage(cache.bridgeRailsCanvas, 0, 0, innerWidth, innerHeight);
     }
   };
 
   const drawLiveRef = useRef<() => void>(() => {});
   drawLiveRef.current = () => {
-    const canvas = liveCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const lower = lowerCanvasRef.current?.getContext('2d');
+    const upper = upperCanvasRef.current?.getContext('2d');
+    if (!lower || !upper) return;
 
     const { width: innerWidth, height: innerHeight, dpr } = sizeRef.current;
     const {
@@ -678,34 +627,40 @@ export function RectMaze({
       player: curPlayer,
       explored: curExplored,
       trail: curTrail,
-      hintPath: curHintPath,
       theme: curTheme,
       marbleMode: curMarbleMode,
       marbleRef: curMarbleRef,
       fogOfWar: curFogOfWar,
     } = propsRef.current;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    const layers = { lower, upper };
+    for (const ctx of [lower, upper]) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+    }
 
-    const { cellSize, offsetX, offsetY, wallWidth } = computeLayout(
+    const { cellSize, offsetX, offsetY } = computeLayout(
       innerWidth,
       innerHeight,
       curMaze,
     );
 
     const marble = curMarbleMode && curMarbleRef ? curMarbleRef.current : null;
-    const activeRow = marble ? marble.row : curPlayer.row;
-    const activeCol = marble ? marble.col : curPlayer.col;
-    const activeLevel = marble ? marble.level : curPlayer.level;
-    const activeX = marble
-      ? offsetX + marble.x * cellSize
-      : offsetX + (curPlayer.col + 0.5) * cellSize;
-    const activeY = marble
-      ? offsetY + marble.y * cellSize
-      : offsetY + (curPlayer.row + 0.5) * cellSize;
+    const spot = marble ?? {
+      x: curPlayer.col + 0.5,
+      y: curPlayer.row + 0.5,
+      row: curPlayer.row,
+      col: curPlayer.col,
+      level: curPlayer.level,
+    };
+    const activeX = offsetX + spot.x * cellSize;
+    const activeY = offsetY + spot.y * cellSize;
 
-    const drawActiveEntity = (under: boolean, alpha?: number) => {
+    const drawActiveEntity = (
+      ctx: CanvasRenderingContext2D,
+      under: boolean,
+      alpha?: number,
+    ) => {
       if (marble) {
         drawMarbleCanvas(
           ctx,
@@ -716,7 +671,7 @@ export function RectMaze({
           {
             under,
             alpha,
-            elevated: !under && activeLevel === 'over',
+            elevated: !under && marble.level === 'over',
             u: marble.u,
             v: marble.v,
             squash: marble.squash,
@@ -728,201 +683,90 @@ export function RectMaze({
       }
     };
 
-    const underAlphaForDistance = (d: number): number => {
-      const t = Math.max(0, Math.min(1, 1 - d / 0.72));
-      const smooth = t * t * (3 - 2 * t);
-      return 0.85 - smooth * 0.53;
-    };
-
-    let underBridge: { cell: Cell; alpha: number } | null = null;
-    if (activeLevel === 'under') {
-      const bridgeCell = curMaze.grid[activeRow]?.[activeCol];
-      if (bridgeCell?.bridge) {
-        const d = marble
-          ? bridgeCell.bridge === 'horizontal'
-            ? Math.abs(marble.y - (bridgeCell.row + 0.5))
-            : Math.abs(marble.x - (bridgeCell.col + 0.5))
-          : 0;
-        underBridge = {
-          cell: bridgeCell,
-          alpha: marble ? underAlphaForDistance(d) : 0.5,
-        };
-      }
-    } else if (marble && activeLevel === undefined) {
-      const adjacent: Array<[number, number, 'horizontal' | 'vertical']> = [
-        [activeRow - 1, activeCol, 'horizontal'],
-        [activeRow + 1, activeCol, 'horizontal'],
-        [activeRow, activeCol - 1, 'vertical'],
-        [activeRow, activeCol + 1, 'vertical'],
-      ];
-      for (const [nr, nc, bridgeAxis] of adjacent) {
-        const neighbor = curMaze.grid[nr]?.[nc];
-        if (neighbor?.bridge !== bridgeAxis) continue;
-        const d =
-          bridgeAxis === 'horizontal'
-            ? Math.abs(marble.y - (nr + 0.5))
-            : Math.abs(marble.x - (nc + 0.5));
-        if (d < 0.82) {
-          underBridge = { cell: neighbor, alpha: underAlphaForDistance(d) };
-          break;
-        }
-      }
-    }
-
-    // Live trail tip (only in Marble Mode; last segment from trail[n-2] to projected marble)
-    if (marble && curTrail.length > 0) {
-      if (curTrail.length === 1) {
-        const cur = curTrail[0];
-        const ext = extendFromCenter(curMaze, marble, cur);
-        if (ext) {
-          strokeTrailCoords(
-            ctx,
-            [{ x: cur.col + 0.5, y: cur.row + 0.5 }, ext],
-            cellSize,
-            offsetX,
-            offsetY,
-            curTheme,
-          );
-        }
-      } else {
-        const prev = curTrail[curTrail.length - 2];
-        const cur = curTrail[curTrail.length - 1];
-        const tipCoords = [
-          { x: prev.col + 0.5, y: prev.row + 0.5 },
-          ...projectTrailEnd(curMaze, marble, prev, cur),
-        ];
-        const excludeJoin =
-          curTrail.length >= 3
-            ? {
-                x: offsetX + (prev.col + 0.5) * cellSize,
-                y: offsetY + (prev.row + 0.5) * cellSize,
-                width: innerWidth,
-                height: innerHeight,
-              }
-            : undefined;
-        strokeTrailCoords(
-          ctx,
-          tipCoords,
+    // Live trail tip (Marble Mode only): last segment up to the marble, then the start of the next
+    if (marble) {
+      const tip = layerTipParts(curTrail, rectTipParts(curMaze, marble, curTrail));
+      for (const layer of ['lower', 'upper'] as const) {
+        strokeTrailRuns(
+          layers[layer],
+          tip[layer].parts.map((part) => part.coords),
           cellSize,
           offsetX,
           offsetY,
           curTheme,
-          excludeJoin,
+          tip[layer].cutouts.map(centerOf),
         );
       }
     }
 
-    if (underBridge) {
-      const cache = staticCacheRef.current;
-      const cell = underBridge.cell;
+    const depth = marbleDepth(curMaze, spot);
+    drawActiveEntity(layers[depth.layer], false);
+    if (depth.ghost) {
+      // Ghost only where the deck covers the entity, so tunnel shadows still shade it.
+      const cell = depth.ghost.cell;
       const half = cellSize / 2;
       const overhang = cellSize * 0.14;
-      const deckW = cellSize + overhang * 2;
-      const cx = offsetX + (cell.col + 0.5) * cellSize;
-      const cy = offsetY + (cell.row + 0.5) * cellSize;
-
-      // Portion of marble outside the deck
-      if (marble) {
-        drawActiveEntity(false);
-      }
-
-      // Single-cell bridge deck + over-trail + over-hint + faded underpass entity
-      ctx.save();
-      ctx.beginPath();
-      ctx.save();
-      ctx.translate(cx, cy);
-      if (cell.bridge === 'vertical') ctx.rotate(Math.PI / 2);
-      ctx.rect(-half - overhang, -half, deckW, cellSize);
-      ctx.restore();
-      ctx.clip();
-
-      if (cache.bridgeDecksCanvas) {
-        ctx.drawImage(cache.bridgeDecksCanvas, 0, 0, innerWidth, innerHeight);
-      }
-
-      for (const part of pathThrough(curTrail, cell, 'over')) {
-        const isLiveEnd =
-          marble !== null &&
-          part.length >= 2 &&
-          part[part.length - 1] === curTrail[curTrail.length - 1];
-        if (marble && isLiveEnd) {
-          const coords = part
-            .slice(0, -1)
-            .map((pos) => ({ x: pos.col + 0.5, y: pos.row + 0.5 }));
-          coords.push(
-            ...projectTrailEnd(
-              curMaze,
-              marble,
-              part[part.length - 2],
-              part[part.length - 1],
-            ),
-          );
-          strokeTrailCoords(ctx, coords, cellSize, offsetX, offsetY, curTheme);
-        } else {
-          strokeTrailCoords(
-            ctx,
-            part.map((pos) => ({ x: pos.col + 0.5, y: pos.row + 0.5 })),
-            cellSize,
-            offsetX,
-            offsetY,
-            curTheme,
-          );
-        }
-      }
-      for (const part of pathThrough(curHintPath, cell, 'over')) {
-        strokeHint(ctx, part, cellSize, offsetX, offsetY, curTheme);
-      }
-      drawActiveEntity(true, underBridge.alpha);
-      ctx.restore();
-
-      // Single-cell bridge rails & corner posts (slightly padded clip so posts aren't cropped)
-      if (cache.bridgeRailsCanvas) {
-        const railPad = Math.max(4, wallWidth * 2.5);
-        ctx.save();
-        ctx.beginPath();
-        ctx.save();
-        ctx.translate(cx, cy);
-        if (cell.bridge === 'vertical') ctx.rotate(Math.PI / 2);
-        ctx.rect(
-          -half - overhang - railPad,
-          -half - railPad,
-          deckW + railPad * 2,
-          cellSize + railPad * 2,
-        );
-        ctx.restore();
-        ctx.clip();
-        ctx.drawImage(cache.bridgeRailsCanvas, 0, 0, innerWidth, innerHeight);
-        ctx.restore();
-      }
-    } else {
-      drawActiveEntity(false);
+      upper.save();
+      upper.beginPath();
+      upper.save();
+      upper.translate(
+        offsetX + (cell.col + 0.5) * cellSize,
+        offsetY + (cell.row + 0.5) * cellSize,
+      );
+      if (cell.bridge === 'vertical') upper.rotate(Math.PI / 2);
+      upper.rect(-half - overhang, -half, cellSize + overhang * 2, cellSize);
+      upper.restore();
+      upper.clip();
+      drawActiveEntity(upper, true, depth.ghost.alpha);
+      upper.restore();
     }
 
-    if (curFogOfWar) {
-      if (!fogCacheRef.current) {
-        fogCacheRef.current = new GridFogCache();
-      }
-      fogCacheRef.current.draw(ctx, {
-        fogColor: curTheme.fogColor,
-        lightTint: curTheme.lightTint,
-        width: innerWidth,
-        height: innerHeight,
-        cellSize,
-        offsetX,
-        offsetY,
-        activeX,
-        activeY,
-        explored: curExplored,
-        boardToken: curMaze,
-      });
+    const fogCtx = fogCanvasRef.current?.getContext('2d');
+    if (!fogCtx) return;
+    fogCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fogCtx.clearRect(0, 0, innerWidth, innerHeight);
+    if (!curFogOfWar) return;
+    if (!fogCacheRef.current) {
+      fogCacheRef.current = new FogCache();
     }
+    fogCacheRef.current.draw(fogCtx, {
+      fogColor: curTheme.fogColor,
+      lightTint: curTheme.lightTint,
+      width: innerWidth,
+      height: innerHeight,
+      memRadius: cellSize * FOG_MEMORY_RADIUS,
+      lightRadius: cellSize * FOG_LIGHT_RADIUS,
+      activeX,
+      activeY,
+      explored: curExplored,
+      cellOf: (key) => {
+        const comma1 = key.indexOf(',');
+        const comma2 = key.indexOf(',', comma1 + 1);
+        const id = comma2 === -1 ? key : key.slice(0, comma2);
+        const r = Number(id.slice(0, comma1));
+        const c = Number(id.slice(comma1 + 1));
+        return {
+          id,
+          x: offsetX + (c + 0.5) * cellSize,
+          y: offsetY + (r + 0.5) * cellSize,
+        };
+      },
+      boardToken: curMaze,
+    });
   };
 
   useEffect(() => {
     const container = containerRef.current;
-    const boardCanvas = boardCanvasRef.current;
-    const liveCanvas = liveCanvasRef.current;
-    if (!container || !boardCanvas || !liveCanvas) return;
+    const canvases = [
+      boardCanvasRef.current,
+      lowerCanvasRef.current,
+      bridgesCanvasRef.current,
+      upperCanvasRef.current,
+      railsCanvasRef.current,
+      fogCanvasRef.current,
+    ];
+    if (!container || canvases.some((c) => !c)) return;
+    const layers = canvases as HTMLCanvasElement[];
 
     const syncSize = () => {
       const rect = container.getBoundingClientRect();
@@ -934,26 +778,19 @@ export function RectMaze({
 
       const prev = sizeRef.current;
       const changed =
-        boardCanvas.width !== targetW ||
-        boardCanvas.height !== targetH ||
-        liveCanvas.width !== targetW ||
-        liveCanvas.height !== targetH ||
+        layers.some((c) => c.width !== targetW || c.height !== targetH) ||
         prev.width !== innerWidth ||
         prev.height !== innerHeight ||
         prev.dpr !== dpr;
 
       if (changed) {
         sizeRef.current = { width: innerWidth, height: innerHeight, dpr };
-        if (boardCanvas.width !== targetW) boardCanvas.width = targetW;
-        if (boardCanvas.height !== targetH) boardCanvas.height = targetH;
-        boardCanvas.style.width = `${innerWidth}px`;
-        boardCanvas.style.height = `${innerHeight}px`;
-
-        if (liveCanvas.width !== targetW) liveCanvas.width = targetW;
-        if (liveCanvas.height !== targetH) liveCanvas.height = targetH;
-        liveCanvas.style.width = `${innerWidth}px`;
-        liveCanvas.style.height = `${innerHeight}px`;
-
+        for (const c of layers) {
+          if (c.width !== targetW) c.width = targetW;
+          if (c.height !== targetH) c.height = targetH;
+          c.style.width = `${innerWidth}px`;
+          c.style.height = `${innerHeight}px`;
+        }
         drawBoardRef.current();
         drawLiveRef.current();
       }
@@ -997,6 +834,7 @@ export function RectMaze({
     aspectRatioId,
   ]);
 
+  const overlayClass = 'pointer-events-none absolute inset-0 block rounded-xl';
   return (
     <div
       ref={containerRef}
@@ -1008,13 +846,82 @@ export function RectMaze({
       }
     >
       <div className="relative shrink-0">
+        {/* Bottom to top: board, lower live, bridges, upper live, rails, fog (see game/bridgeDepth) */}
         <canvas ref={boardCanvasRef} className="block rounded-xl" />
-        <canvas
-          ref={liveCanvasRef}
-          className="pointer-events-none absolute inset-0 block rounded-xl"
-          style={{ willChange: 'transform' }}
-        />
+        <canvas ref={lowerCanvasRef} className={overlayClass} />
+        <canvas ref={bridgesCanvasRef} className={overlayClass} />
+        <canvas ref={upperCanvasRef} className={overlayClass} />
+        <canvas ref={railsCanvasRef} className={overlayClass} />
+        <canvas ref={fogCanvasRef} className={overlayClass} />
       </div>
     </div>
   );
+}
+
+function centerOf(pos: Position): { x: number; y: number } {
+  return { x: pos.col + 0.5, y: pos.row + 0.5 };
+}
+
+interface RectTipPart {
+  from: Position;
+  to: Position;
+  coords: Array<{ x: number; y: number }>;
+}
+
+/** Start of the next segment, from `cur`'s centre toward the marble (grid units). */
+function extendFromCenter(
+  maze: Maze,
+  marble: MarbleBody,
+  cur: Position,
+): RectTipPart | null {
+  const c = centerOf(cur);
+  const relX = marble.x - c.x;
+  const relY = marble.y - c.y;
+  const horizontal = Math.abs(relX) >= Math.abs(relY);
+  const rel = horizontal ? relX : relY;
+  if (Math.abs(rel) <= 0.02) return null;
+  const dir = horizontal
+    ? rel > 0
+      ? 'right'
+      : 'left'
+    : rel > 0
+      ? 'bottom'
+      : 'top';
+  const next = gridStep(maze, cur, dir);
+  if (!next) return null;
+  const end = horizontal ? { x: marble.x, y: c.y } : { x: c.x, y: marble.y };
+  return { from: cur, to: next, coords: [c, end] };
+}
+
+function rectTipParts(
+  maze: Maze,
+  marble: MarbleBody,
+  trail: Position[],
+): RectTipPart[] {
+  if (trail.length === 0) return [];
+  const cur = trail[trail.length - 1];
+  if (trail.length === 1) {
+    const ext = extendFromCenter(maze, marble, cur);
+    return ext ? [ext] : [];
+  }
+  const prev = trail[trail.length - 2];
+  const dx = cur.col - prev.col;
+  const dy = cur.row - prev.row;
+  const start = centerOf(prev);
+  const proj = Math.max(
+    0,
+    Math.min(1, (marble.x - start.x) * dx + (marble.y - start.y) * dy),
+  );
+  const parts: RectTipPart[] = [
+    {
+      from: prev,
+      to: cur,
+      coords: [start, { x: start.x + dx * proj, y: start.y + dy * proj }],
+    },
+  ];
+  if (proj >= 0.999) {
+    const ext = extendFromCenter(maze, marble, cur);
+    if (ext) parts.push(ext);
+  }
+  return parts;
 }

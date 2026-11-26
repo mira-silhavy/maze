@@ -1,18 +1,15 @@
 import {
-  memo,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
-  useState,
   type MutableRefObject,
 } from 'react';
+import { layerPath, layerTipParts, marbleDepth } from '../game/bridgeDepth';
 import type { MarbleBody } from '../game/marble';
 import {
   bridgeNeighbors,
   corridorLinks,
   gridStep,
-  pathThrough,
   positionKey,
 } from '../maze/grid';
 import type {
@@ -23,19 +20,23 @@ import type {
   Position,
 } from '../maze/types';
 import {
-  MarbleSvg,
+  drawMarbleCanvas,
   ThemedGoalSvg,
   ThemedPlayerSvg,
   ThemedTargetSvg,
 } from '../themes/art';
 import type { MazeTheme } from '../themes/catalog';
 import {
+  GlowFilterSvg,
   ThemedCorridorTubeSvg,
   ThemedCurvedBridgeBaseSvg,
   ThemedCurvedBridgeOverlaySvg,
   type CurvedBridgeCorner,
   type SvgBounds,
 } from '../themes/sceneSvg';
+import { drawLiveTipCanvas } from './canvasLayers';
+import { useSvgFogCanvas } from './useSvgFogCanvas';
+import { useViewBoxCanvas } from './viewBoxCanvas';
 
 interface CurvedMazeProps {
   maze: Maze;
@@ -62,6 +63,7 @@ const CONTAINER_MAX_WIDTH: Record<AspectRatioId, string> = {
 };
 
 const CELL_UNIT = 40;
+const CURVED_MARBLE_RADIUS = 10.5;
 const PADDING = 24;
 
 function nodeCenter(pos: Position): { x: number; y: number } {
@@ -209,44 +211,48 @@ function bridgeGeometry(cell: Cell): {
   };
 }
 
+interface TrailPart {
+  from: Position;
+  to: Position;
+  d: string;
+}
+
 function extendCurvedFromCenter(
   maze: Maze,
   cur: Position,
   mp: { x: number; y: number },
-): string {
+): TrailPart | null {
   const relX = mp.x - (cur.col + 0.5);
   const relY = mp.y - (cur.row + 0.5);
-  if (Math.abs(relX) >= Math.abs(relY)) {
-    if (relX > 0.02) {
-      const next = gridStep(maze, cur, 'right');
-      if (next) return curvedSubSegment(cur, next, relX);
-    } else if (relX < -0.02) {
-      const next = gridStep(maze, cur, 'left');
-      if (next) return curvedSubSegment(cur, next, -relX);
-    }
-  } else {
-    if (relY > 0.02) {
-      const next = gridStep(maze, cur, 'bottom');
-      if (next) return curvedSubSegment(cur, next, relY);
-    } else if (relY < -0.02) {
-      const next = gridStep(maze, cur, 'top');
-      if (next) return curvedSubSegment(cur, next, -relY);
-    }
-  }
-  return '';
+  const horizontal = Math.abs(relX) >= Math.abs(relY);
+  const rel = horizontal ? relX : relY;
+  if (Math.abs(rel) <= 0.02) return null;
+  const dir = horizontal
+    ? rel > 0
+      ? 'right'
+      : 'left'
+    : rel > 0
+      ? 'bottom'
+      : 'top';
+  const next = gridStep(maze, cur, dir);
+  if (!next) return null;
+  const d = curvedSubSegment(cur, next, Math.abs(rel));
+  return d ? { from: cur, to: next, d } : null;
 }
 
-function buildCurvedLiveTipD(
+/** Live trail tip as segments: the last trail segment up to the marble, then the start of the next one. */
+function curvedLiveTipParts(
   maze: Maze,
   points: Position[],
   mp: { x: number; y: number },
-): string {
-  if (points.length === 0) return '';
+): TrailPart[] {
+  if (points.length === 0) return [];
+  const cur = points[points.length - 1];
   if (points.length === 1) {
-    return extendCurvedFromCenter(maze, points[0], mp);
+    const ext = extendCurvedFromCenter(maze, cur, mp);
+    return ext ? [ext] : [];
   }
   const prev = points[points.length - 2];
-  const cur = points[points.length - 1];
   const dx = cur.col - prev.col;
   const dy = cur.row - prev.row;
   const proj = Math.max(
@@ -256,73 +262,51 @@ function buildCurvedLiveTipD(
       (mp.x - (prev.col + 0.5)) * dx + (mp.y - (prev.row + 0.5)) * dy,
     ),
   );
-  const parts: string[] = [];
+  const parts: TrailPart[] = [];
   const tipSeg = curvedSubSegment(prev, cur, proj);
-  if (tipSeg) parts.push(tipSeg);
+  if (tipSeg) parts.push({ from: prev, to: cur, d: tipSeg });
   if (proj >= 0.999) {
     const ext = extendCurvedFromCenter(maze, cur, mp);
     if (ext) parts.push(ext);
   }
-  return parts.join(' ');
+  return parts;
 }
 
-function buildCurvedStaticSegmentsD(points: Position[], endIdx: number): string {
-  if (endIdx < 1) return '';
-  const segments: string[] = [];
-  for (let i = 0; i < endIdx; i++) {
-    segments.push(curvedSegment(points[i], points[i + 1]));
-  }
-  return segments.join(' ');
+interface LayeredTrail {
+  lowerD: string;
+  upperD: string;
+  upperCutouts: Array<{ x: number; y: number }>;
 }
 
-function underOpacityForCell(cell: Cell, mp: { x: number; y: number }): number {
-  const d =
-    cell.bridge === 'horizontal'
-      ? Math.abs(mp.y - (cell.row + 0.5))
-      : Math.abs(mp.x - (cell.col + 0.5));
-  const t = Math.max(0, Math.min(1, 1 - d / 0.72));
-  const smooth = t * t * (3 - 2 * t);
-  return 0.85 - smooth * 0.53;
+function runsD(runs: Position[][]): string {
+  return runs
+    .flatMap((run) => run.slice(1).map((to, i) => curvedSegment(run[i], to)))
+    .join(' ');
 }
 
-const LiveCurvedMarble = memo(function LiveCurvedMarble({
-  mazeRows,
-  mazeCols,
-  theme,
-  marbleRef,
-  registerTick,
-  elevated,
-}: {
-  mazeRows: number;
-  mazeCols: number;
-  theme: MazeTheme;
-  marbleRef: MutableRefObject<MarbleBody>;
-  registerTick: (fn: (() => void) | null) => void;
-  elevated: boolean;
-}) {
-  const [, setFrame] = useState(0);
+function layeredTrail(points: Position[], endIdx: number): LayeredTrail {
+  const path = layerPath(points, endIdx);
+  return {
+    lowerD: runsD(path.lower),
+    upperD: runsD(path.upper),
+    upperCutouts: path.upperCutouts.map(nodeCenter),
+  };
+}
 
-  useEffect(() => {
-    const tick = () => setFrame((n) => (n + 1) | 0);
-    registerTick(tick);
-    return () => registerTick(null);
-  }, [registerTick]);
-
-  const body = marbleRef.current;
-  const pt = curvedPointFromGrid(body.x, body.y, mazeRows, mazeCols);
-  return (
-    <MarbleSvg
-      x={pt.x}
-      y={pt.y}
-      r={10.5}
-      theme={theme}
-      idPrefix="curved"
-      u={body.u}
-      v={body.v}
-      elevated={elevated}
-    />
-  );
-});
+function cutoutClipD(
+  width: number,
+  height: number,
+  cutouts: Array<{ x: number; y: number }>,
+  r: number,
+): string {
+  return [
+    `M 0 0 H ${width} V ${height} H 0 Z`,
+    ...cutouts.map(
+      (c) =>
+        `M ${(c.x - r).toFixed(2)} ${c.y.toFixed(2)} a ${r} ${r} 0 1 0 ${(r * 2).toFixed(2)} 0 a ${r} ${r} 0 1 0 ${(-r * 2).toFixed(2)} 0 Z`,
+    ),
+  ].join(' ');
+}
 
 export function CurvedMaze({
   maze,
@@ -360,168 +344,149 @@ export function CurvedMaze({
   );
 
   const bridgeItems = useMemo(() => {
-    const overhang = CELL_UNIT * 0.14;
+    const maskPad = CELL_UNIT * 1.05;
     return maze.grid
       .flat()
       .filter((cell) => cell.bridge)
       .map((cell) => {
         const { deck, corners } = bridgeGeometry(cell);
-        const padX = cell.bridge === 'horizontal' ? overhang : 0;
-        const padY = cell.bridge === 'vertical' ? overhang : 0;
-        const clipX = PADDING + cell.col * CELL_UNIT - padX;
-        const clipY = PADDING + cell.row * CELL_UNIT - padY;
-        const clipW = CELL_UNIT + padX * 2;
-        const clipH = CELL_UNIT + padY * 2;
-        const maskPad = CELL_UNIT * 0.9;
         return {
           cell,
           key: positionKey(cell),
           deck,
           corners,
-          clipX,
-          clipY,
-          clipW,
-          clipH,
           maskBounds: {
-            x: clipX - maskPad,
-            y: clipY - maskPad,
-            width: clipW + maskPad * 2,
-            height: clipH + maskPad * 2,
+            x: PADDING + cell.col * CELL_UNIT - maskPad,
+            y: PADDING + cell.row * CELL_UNIT - maskPad,
+            width: CELL_UNIT + maskPad * 2,
+            height: CELL_UNIT + maskPad * 2,
           },
         };
       });
   }, [maze]);
 
-  const staticTrailD = useMemo(() => {
-    if (trail.length < 2) return '';
-    return buildCurvedStaticSegmentsD(
-      trail,
-      marbleMode ? trail.length - 2 : trail.length - 1,
-    );
-  }, [trail, marbleMode]);
-
-  const hintPathD = useMemo(() => {
-    if (hintPath.length < 2) return '';
-    return buildCurvedStaticSegmentsD(hintPath, hintPath.length - 1);
-  }, [hintPath]);
-
-  const exploredCenters = useMemo(() => {
-    if (!fogOfWar) return [];
-    const seen = new Set<string>();
-    const pts: Array<{ key: string; x: number; y: number }> = [];
-    for (const key of explored) {
-      const parts = key.split(',');
-      const row = Number(parts[0]);
-      const col = Number(parts[1]);
-      const cellKey = `${row},${col}`;
-      if (seen.has(cellKey)) continue;
-      seen.add(cellKey);
-      const pt = nodeCenter({ row, col });
-      pts.push({ key: cellKey, x: pt.x, y: pt.y });
-    }
-    return pts;
-  }, [explored, fogOfWar]);
+  const trailWidth = CELL_UNIT * 0.2;
+  const committedTrail = useMemo(
+    () => layeredTrail(trail, marbleMode ? trail.length - 2 : trail.length - 1),
+    [trail, marbleMode],
+  );
+  const committedHint = useMemo(
+    () => layeredTrail(hintPath, hintPath.length - 1),
+    [hintPath],
+  );
 
   const startPos = useMemo(() => nodeCenter(maze.start), [maze.start]);
   const endPos = useMemo(() => nodeCenter(maze.end), [maze.end]);
 
   const marbleBody = marbleMode && marbleRef ? marbleRef.current : null;
-  const effectiveLevel = marbleBody ? marbleBody.level : player.level;
-  const effectiveRow = marbleBody ? marbleBody.row : player.row;
-  const effectiveCol = marbleBody ? marbleBody.col : player.col;
-
   const initialPos = marbleBody
     ? curvedPointFromGrid(marbleBody.x, marbleBody.y, maze.rows, maze.cols)
     : nodeCenter(player);
-  const initialLiveTipD = marbleBody
-    ? buildCurvedLiveTipD(maze, trail, marbleBody)
-    : '';
+  const playerDepth = marbleDepth(maze, {
+    x: player.col + 0.5,
+    y: player.row + 0.5,
+    row: player.row,
+    col: player.col,
+    level: player.level,
+  });
 
-  const underBridgeCell =
-    effectiveLevel === 'under'
-      ? bridgeItems.find(
-          (b) => b.cell.row === effectiveRow && b.cell.col === effectiveCol,
-        )?.cell ?? null
-      : null;
-
-  const joinClipPathD = useMemo(() => {
-    if (!marbleMode || trail.length < 3) return '';
-    const joinPt = nodeCenter(trail[trail.length - 2]);
-    const r = (CELL_UNIT * 0.2) / 2;
-    return `M 0 0 H ${viewWidth} V ${viewHeight} H 0 Z M ${(joinPt.x - r).toFixed(2)} ${joinPt.y.toFixed(2)} a ${r} ${r} 0 1 0 ${(r * 2).toFixed(2)} 0 a ${r} ${r} 0 1 0 ${(-r * 2).toFixed(2)} 0 Z`;
-  }, [marbleMode, trail, viewWidth, viewHeight]);
-
-  const underMarble = effectiveLevel === 'under';
   const showOverlay = marbleMode && Boolean(marbleRef);
-  const useOverlayTip = showOverlay && !underMarble;
+  const viewBox = { x: 0, y: 0, width: viewWidth, height: viewHeight };
+  const trailOpacity = theme.isLight ? 0.85 : 0.8;
 
-  const liveTipPathRef = useRef<SVGPathElement>(null);
-  const boardLiveTipPathRef = useRef<SVGPathElement>(null);
-  const fogLightCircleRef = useRef<SVGCircleElement>(null);
-  const fogTintCircleRef = useRef<SVGCircleElement>(null);
-  const underGroupRef = useRef<SVGGElement>(null);
-  const marbleTickRef = useRef<(() => void) | null>(null);
-  const registerMarbleTick = useCallback((fn: (() => void) | null) => {
-    marbleTickRef.current = fn;
-  }, []);
-
-  const bridgeOverlays = useMemo(() => {
-    const lastTrailPos = trail[trail.length - 1];
-    return bridgeItems.map((item) => {
-      const overTrails = pathThrough(trail, item.cell, 'over');
-      const staticPartsD: string[] = [];
-      for (const part of overTrails) {
-        const isLiveEnd =
-          marbleMode &&
-          part.length >= 2 &&
-          part[part.length - 1] === lastTrailPos;
-        if (isLiveEnd) {
-          const prefixD = buildCurvedStaticSegmentsD(part, part.length - 2);
-          if (prefixD) staticPartsD.push(prefixD);
-        } else {
-          const fullD = buildCurvedStaticSegmentsD(part, part.length - 1);
-          if (fullD) staticPartsD.push(fullD);
+  const fog = useSvgFogCanvas(
+    fogOfWar
+      ? {
+          viewBox,
+          cellUnit: CELL_UNIT,
+          theme,
+          explored,
+          cellOf: (key) => {
+            const [row, col] = key.split(',').map(Number);
+            return { id: `${row},${col}`, ...nodeCenter({ row, col }) };
+          },
+          boardToken: maze,
+          active: initialPos,
         }
-      }
-      const hintPartsD = pathThrough(hintPath, item.cell, 'over')
-        .map((part) => buildCurvedStaticSegmentsD(part, part.length - 1))
-        .filter(Boolean);
-      return {
-        ...item,
-        staticTrailD: staticPartsD.join(' '),
-        hintPartsD,
-      };
-    });
-  }, [bridgeItems, trail, hintPath, marbleMode]);
+      : null,
+  );
 
   const updateLiveDomRef = useRef<() => void>(() => {});
+  const ghostScratchRef = useRef<HTMLCanvasElement | null>(null);
+  const redrawLive = () => updateLiveDomRef.current();
+  const lowerLive = useViewBoxCanvas(viewBox, showOverlay, redrawLive);
+  const upperLive = useViewBoxCanvas(viewBox, showOverlay, redrawLive);
   updateLiveDomRef.current = () => {
     if (!marbleMode || !marbleRef) return;
     const body = marbleRef.current;
     const pt = curvedPointFromGrid(body.x, body.y, maze.rows, maze.cols);
-    const tipD = buildCurvedLiveTipD(maze, trail, body);
+    if (fogOfWar) fog.draw(pt);
 
-    if (liveTipPathRef.current) {
-      liveTipPathRef.current.setAttribute('d', tipD);
-    }
-    if (boardLiveTipPathRef.current) {
-      boardLiveTipPathRef.current.setAttribute('d', tipD);
-    }
-    if (fogLightCircleRef.current) {
-      fogLightCircleRef.current.setAttribute('cx', pt.x.toFixed(2));
-      fogLightCircleRef.current.setAttribute('cy', pt.y.toFixed(2));
-    }
-    if (fogTintCircleRef.current) {
-      fogTintCircleRef.current.setAttribute('cx', pt.x.toFixed(2));
-      fogTintCircleRef.current.setAttribute('cy', pt.y.toFixed(2));
-    }
-    if (underGroupRef.current && underBridgeCell) {
-      underGroupRef.current.setAttribute(
-        'opacity',
-        underOpacityForCell(underBridgeCell, body).toFixed(3),
+    const lower = lowerLive.begin();
+    const upper = upperLive.begin();
+    if (!lower || !upper) return;
+    lower.useViewBoxUnits();
+    upper.useViewBoxUnits();
+    const layers = { lower: lower.ctx, upper: upper.ctx };
+
+    const tip = layerTipParts(trail, curvedLiveTipParts(maze, trail, body));
+    for (const layer of ['lower', 'upper'] as const) {
+      drawLiveTipCanvas(
+        layers[layer],
+        tip[layer].parts.map((part) => part.d).join(' '),
+        {
+          color: theme.pencilLine,
+          width: trailWidth,
+          alpha: trailOpacity,
+          cutouts: tip[layer].cutouts.map(nodeCenter),
+          bounds: viewBox,
+        },
       );
     }
-    marbleTickRef.current?.();
+
+    const depth = marbleDepth(maze, body);
+    const marbleOptions = {
+      elevated: body.level === 'over',
+      u: body.u,
+      v: body.v,
+      squash: body.squash,
+      squashAxis: body.squashAxis,
+    };
+    drawMarbleCanvas(
+      layers[depth.layer],
+      pt.x,
+      pt.y,
+      CURVED_MARBLE_RADIUS,
+      theme,
+      marbleOptions,
+    );
+    if (depth.ghost) {
+      const deck = bridgeItems.find((item) => item.cell === depth.ghost!.cell)?.deck;
+      const target = upper.ctx;
+      const scratch = (ghostScratchRef.current ??= document.createElement('canvas'));
+      if (deck) {
+        scratch.width = target.canvas.width;
+        scratch.height = target.canvas.height;
+        const sctx = scratch.getContext('2d');
+        if (sctx) {
+          sctx.setTransform(target.getTransform());
+          drawMarbleCanvas(sctx, pt.x, pt.y, CURVED_MARBLE_RADIUS, theme, {
+            ...marbleOptions,
+            under: true,
+            alpha: depth.ghost.alpha,
+          });
+          sctx.globalCompositeOperation = 'destination-in';
+          sctx.lineWidth = CELL_UNIT * 0.56;
+          sctx.lineCap = 'butt';
+          sctx.strokeStyle = '#000';
+          sctx.stroke(new Path2D(deck));
+          target.save();
+          target.setTransform(1, 0, 0, 1, 0, 0);
+          target.drawImage(scratch, 0, 0);
+          target.restore();
+        }
+      }
+    }
   };
 
   useEffect(() => {
@@ -531,21 +496,59 @@ export function CurvedMaze({
     return () => registerDraw(null);
   }, [registerDraw]);
 
-  const playerMarker =
-    marbleMode && marbleRef ? (
-      <LiveCurvedMarble
-        mazeRows={maze.rows}
-        mazeCols={maze.cols}
-        theme={theme}
-        marbleRef={marbleRef}
-        registerTick={registerMarbleTick}
-        elevated={effectiveLevel === 'over'}
+  // Redraw the live layers after every render (new step, theme, restart).
+  useEffect(() => updateLiveDomRef.current());
+
+  const playerMarker = (
+    <ThemedPlayerSvg x={initialPos.x} y={initialPos.y} r={10.5} theme={theme} />
+  );
+  const glowedPlayer = (filterId: string) => (
+    <g filter={theme.isLight ? undefined : `url(#${filterId})`}>{playerMarker}</g>
+  );
+
+  const trailStroke = (d: string, clipId?: string) =>
+    d && (
+      <path
+        d={d}
+        fill="none"
+        stroke={theme.pencilLine}
+        strokeWidth={trailWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={trailOpacity}
+        clipPath={clipId ? `url(#${clipId})` : undefined}
       />
-    ) : (
-      <ThemedPlayerSvg x={initialPos.x} y={initialPos.y} r={10.5} theme={theme} />
+    );
+  const hintStroke = (d: string, clipId?: string) =>
+    d && (
+      <path
+        d={d}
+        fill="none"
+        stroke={theme.hintStroke}
+        strokeWidth={CELL_UNIT * 0.14}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="6 8"
+        opacity="0.9"
+        clipPath={clipId ? `url(#${clipId})` : undefined}
+      />
     );
 
-  const trailOpacity = theme.isLight ? 0.85 : 0.8;
+  const bridgeRails = (
+            <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+              {bridgeItems.map((item) => (
+                <ThemedCurvedBridgeOverlaySvg
+                  key={item.key}
+                  deck={item.deck}
+                  corners={item.corners}
+                  cellUnit={CELL_UNIT}
+                  theme={theme}
+                  glowFilterId={showOverlay ? 'curved-rail-glow' : 'curved-bridge-glow'}
+                  maskBounds={item.maskBounds}
+                />
+              ))}
+            </g>
+  );
 
   return (
     <div
@@ -557,6 +560,7 @@ export function CurvedMaze({
       }
     >
       <div className="relative h-full w-full">
+        {/* Board: corridors, ground and underpass trail, markers */}
         <svg
           viewBox={`0 0 ${viewWidth} ${viewHeight}`}
           preserveAspectRatio="xMidYMid meet"
@@ -565,65 +569,9 @@ export function CurvedMaze({
           aria-label="Křivkové bludiště"
         >
           <defs>
-            <filter id="curved-glow" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            {bridgeItems.map((item) => (
-              <clipPath
-                key={item.key}
-                id={`curved-bridge-${item.cell.row}-${item.cell.col}`}
-              >
-                <rect
-                  x={item.clipX}
-                  y={item.clipY}
-                  width={item.clipW}
-                  height={item.clipH}
-                />
-              </clipPath>
-            ))}
-            {fogOfWar && (
-              <>
-                <radialGradient id="curved-fog-mem">
-                  <stop offset="0%" stopColor="black" stopOpacity="0.56" />
-                  <stop offset="100%" stopColor="black" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="curved-fog-light">
-                  <stop offset="0%" stopColor="black" stopOpacity="1" />
-                  <stop offset="64%" stopColor="black" stopOpacity="0.9" />
-                  <stop offset="100%" stopColor="black" stopOpacity="0" />
-                </radialGradient>
-                <radialGradient id="curved-fog-tint">
-                  <stop offset="0%" stopColor={theme.lightTint} />
-                  <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-                </radialGradient>
-                <mask id="curved-fog-mask">
-                  <rect x="0" y="0" width={viewWidth} height={viewHeight} fill="white" />
-                  {exploredCenters.map((pt) => (
-                    <circle
-                      key={pt.key}
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={CELL_UNIT * 1.65}
-                      fill="url(#curved-fog-mem)"
-                    />
-                  ))}
-                  <circle
-                    ref={fogLightCircleRef}
-                    cx={initialPos.x}
-                    cy={initialPos.y}
-                    r={CELL_UNIT * 2.8}
-                    fill="url(#curved-fog-light)"
-                  />
-                </mask>
-              </>
-            )}
+            <GlowFilterSvg id="curved-glow" />
           </defs>
 
-          {/* Corridor tube (themed outer wall + inner floor) */}
           <ThemedCorridorTubeSvg
             d={corridorPathD}
             outerWidth={CELL_UNIT * 0.72}
@@ -633,97 +581,9 @@ export function CurvedMaze({
             maskBounds={corridorMaskBounds}
           />
 
-          {/* Committed pencil line (and board-side live tip only while passing under a bridge) */}
-          {(staticTrailD || (marbleMode && underMarble)) && (
-            <g
-              fill="none"
-              stroke={theme.pencilLine}
-              strokeWidth={CELL_UNIT * 0.2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={trailOpacity}
-            >
-              {staticTrailD && <path d={staticTrailD} />}
-              {marbleMode && underMarble && (
-                <path ref={boardLiveTipPathRef} d={initialLiveTipD} />
-              )}
-            </g>
-          )}
+          {!showOverlay && trailStroke(committedTrail.lowerD)}
+          {hintStroke(committedHint.lowerD)}
 
-          {/* Hint path */}
-          {hintPathD && (
-            <path
-              d={hintPathD}
-              fill="none"
-              stroke={theme.hintStroke}
-              strokeWidth={CELL_UNIT * 0.14}
-              strokeLinecap="round"
-              strokeDasharray="6 8"
-              opacity="0.9"
-            />
-          )}
-
-          {bridgeOverlays.map((item) => {
-            const { cell, key, deck, corners, maskBounds, staticTrailD: bridgeStaticD, hintPartsD } = item;
-            const isUnder =
-              underMarble &&
-              effectiveRow === cell.row &&
-              effectiveCol === cell.col;
-            return (
-              <g
-                key={key}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <ThemedCurvedBridgeBaseSvg
-                  deck={deck}
-                  cellUnit={CELL_UNIT}
-                  theme={theme}
-                />
-                <g clipPath={`url(#curved-bridge-${cell.row}-${cell.col})`}>
-                  {bridgeStaticD && (
-                    <path
-                      d={bridgeStaticD}
-                      stroke={theme.pencilLine}
-                      strokeWidth={CELL_UNIT * 0.2}
-                      opacity={trailOpacity}
-                    />
-                  )}
-                  {hintPartsD.map((d, i) => (
-                    <path
-                      key={i}
-                      d={d}
-                      stroke={theme.hintStroke}
-                      strokeWidth={CELL_UNIT * 0.14}
-                      strokeDasharray="6 8"
-                      opacity="0.9"
-                    />
-                  ))}
-                  {isUnder && (
-                    <g
-                      ref={underGroupRef}
-                      opacity={
-                        marbleBody ? underOpacityForCell(cell, marbleBody) : 0.55
-                      }
-                    >
-                      {playerMarker}
-                    </g>
-                  )}
-                </g>
-                <ThemedCurvedBridgeOverlaySvg
-                  deck={deck}
-                  corners={corners}
-                  cellUnit={CELL_UNIT}
-                  theme={theme}
-                  glowFilterId="curved-glow"
-                  maskBounds={maskBounds}
-                />
-              </g>
-            );
-          })}
-
-          {/* Start marker */}
           {gameMode === 'collect' ? (
             <g stroke={theme.startCross} strokeWidth="4.5" strokeLinecap="round">
               <line
@@ -748,7 +608,6 @@ export function CurvedMaze({
             />
           )}
 
-          {/* Goal(s) */}
           {gameMode === 'classic' ? (
             <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
               <ThemedGoalSvg x={endPos.x} y={endPos.y} r={9.5} theme={theme} />
@@ -772,86 +631,102 @@ export function CurvedMaze({
             })
           )}
 
-          {/* Non-marble player */}
-          {!showOverlay && !underMarble && (
-            <g filter={theme.isLight ? undefined : 'url(#curved-glow)'}>
-              {playerMarker}
-            </g>
-          )}
+          {showOverlay && trailStroke(committedTrail.lowerD)}
 
-          {/* Fog of War + Flashlight */}
-          {fogOfWar && (
-            <>
-              <rect
-                x="0"
-                y="0"
-                width={viewWidth}
-                height={viewHeight}
-                fill={theme.fogColor}
-                mask="url(#curved-fog-mask)"
-              />
-              <circle
-                ref={fogTintCircleRef}
-                cx={initialPos.x}
-                cy={initialPos.y}
-                r={CELL_UNIT * 2.8}
-                fill="url(#curved-fog-tint)"
-              />
-            </>
-          )}
+          {!showOverlay && playerDepth.layer === 'lower' && glowedPlayer('curved-glow')}
         </svg>
 
         {showOverlay && (
+          <canvas
+            ref={lowerLive.canvasRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute"
+          />
+        )}
+
+        {/* Bridges: decks, bridge-top trail and hint, rails */}
+        {bridgeItems.length > 0 && (
           <svg
             viewBox={`0 0 ${viewWidth} ${viewHeight}`}
             preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full rounded-xl"
-            style={{ willChange: 'transform' }}
+            className="pointer-events-none absolute inset-0 h-full w-full"
           >
             <defs>
-              <filter
-                id="curved-overlay-glow"
-                x="-40%"
-                y="-40%"
-                width="180%"
-                height="180%"
-              >
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              {joinClipPathD && (
-                <clipPath id="curved-tip-join-clip">
-                  <path d={joinClipPathD} clipRule="evenodd" />
-                </clipPath>
-              )}
+              <GlowFilterSvg id="curved-bridge-glow" />
+              <clipPath id="curved-trail-top-clip">
+                <path
+                  d={cutoutClipD(
+                    viewWidth,
+                    viewHeight,
+                    committedTrail.upperCutouts,
+                    trailWidth / 2,
+                  )}
+                  clipRule="evenodd"
+                />
+              </clipPath>
+              <clipPath id="curved-hint-top-clip">
+                <path
+                  d={cutoutClipD(
+                    viewWidth,
+                    viewHeight,
+                    committedHint.upperCutouts,
+                    CELL_UNIT * 0.07,
+                  )}
+                  clipRule="evenodd"
+                />
+              </clipPath>
             </defs>
-
-            {useOverlayTip && (
-              <path
-                ref={liveTipPathRef}
-                d={initialLiveTipD}
-                fill="none"
-                stroke={theme.pencilLine}
-                strokeWidth={CELL_UNIT * 0.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={trailOpacity}
-                clipPath={
-                  joinClipPathD ? 'url(#curved-tip-join-clip)' : undefined
-                }
-              />
+            <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+              {bridgeItems.map((item) => (
+                <ThemedCurvedBridgeBaseSvg
+                  key={item.key}
+                  deck={item.deck}
+                  cellUnit={CELL_UNIT}
+                  theme={theme}
+                />
+              ))}
+            </g>
+            {trailStroke(committedTrail.upperD, 'curved-trail-top-clip')}
+            {hintStroke(committedHint.upperD, 'curved-hint-top-clip')}
+            {!showOverlay &&
+              playerDepth.layer === 'upper' &&
+              glowedPlayer('curved-bridge-glow')}
+            {!showOverlay && playerDepth.ghost && (
+              <g opacity={playerDepth.ghost.alpha}>{playerMarker}</g>
             )}
-
-            {!underMarble && (
-              <g filter={theme.isLight ? undefined : 'url(#curved-overlay-glow)'}>
-                {playerMarker}
-              </g>
-            )}
+            {!showOverlay && bridgeRails}
           </svg>
+        )}
+
+        {showOverlay && (
+          <canvas
+            ref={upperLive.canvasRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute"
+          />
+        )}
+
+        {showOverlay && bridgeItems.length > 0 && (
+          <svg
+            viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full"
+          >
+            <defs>
+              <GlowFilterSvg id="curved-rail-glow" />
+            </defs>
+            {bridgeRails}
+          </svg>
+        )}
+
+        {fogOfWar && (
+          <canvas
+            ref={fog.canvasRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute rounded-xl"
+          />
         )}
       </div>
     </div>
