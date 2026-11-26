@@ -39,6 +39,20 @@ export async function requestBrowserFullscreen(): Promise<void> {
   } catch {
     // Ignored when browser blocks fullscreen (e.g. without user gesture or unsupported iOS Safari)
   }
+  await lockCurrentOrientation();
+}
+
+// Browsers (Android Chrome) only allow orientation lock while fullscreen; it is released on exit.
+async function lockCurrentOrientation(): Promise<void> {
+  const orientation = screen.orientation as
+    | (ScreenOrientation & { lock?: (o: OrientationType) => Promise<void> })
+    | undefined;
+  if (!getFullscreenElement() || typeof orientation?.lock !== 'function') return;
+  try {
+    await orientation.lock(orientation.type);
+  } catch {
+    // Unsupported on desktop and iOS
+  }
 }
 
 export async function exitBrowserFullscreen(): Promise<void> {
