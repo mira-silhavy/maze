@@ -767,9 +767,8 @@ export function RectMaze({
     const layers = canvases as HTMLCanvasElement[];
 
     const syncSize = () => {
-      const rect = container.getBoundingClientRect();
-      const innerWidth = Math.max(220, Math.floor(rect.width - 16));
-      const innerHeight = Math.max(160, Math.floor(rect.height - 16));
+      const innerWidth = Math.max(220, container.clientWidth - 16);
+      const innerHeight = Math.max(160, container.clientHeight - 16);
       const dpr = Math.min(window.devicePixelRatio || 1, getMaxGameDpr());
       const targetW = Math.floor(innerWidth * dpr);
       const targetH = Math.floor(innerHeight * dpr);
