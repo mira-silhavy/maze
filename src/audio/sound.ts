@@ -86,7 +86,8 @@ function getAudioContext(): AudioContext | null {
 }
 
 export function unlockAudio(): void {
-  void getAudioContext();
+  const ctx = getAudioContext();
+  if (ctx) void loadRollingSample(ctx);
 }
 
 function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
@@ -270,7 +271,30 @@ export function playMarbleBumpSound(intensity = 0.7): void {
   playPartial(ctx, out, 260 * jitter, now, 0.04, 0.05 * clamped, 0.001);
 }
 
+// Optional recorded rolling loop. If the file is absent from the build (or
+// fails to decode), the procedural rumble below is used instead.
+const rollingSampleUrl = Object.values(
+  import.meta.glob('./rolling.mp3', { query: '?url', import: 'default', eager: true }),
+)[0] as string | undefined;
+let rollingSample: AudioBuffer | null = null;
+let rollingSampleState: 'idle' | 'loading' | 'ready' | 'failed' = rollingSampleUrl
+  ? 'idle'
+  : 'failed';
+
+async function loadRollingSample(ctx: AudioContext): Promise<void> {
+  if (!rollingSampleUrl || rollingSampleState !== 'idle') return;
+  rollingSampleState = 'loading';
+  try {
+    const res = await fetch(rollingSampleUrl);
+    rollingSample = await ctx.decodeAudioData(await res.arrayBuffer());
+    rollingSampleState = 'ready';
+  } catch {
+    rollingSampleState = 'failed';
+  }
+}
+
 let rollingNodes: {
+  sample: boolean;
   source: AudioBufferSourceNode;
   bandpass: BiquadFilterNode;
   lowpass: BiquadFilterNode;
@@ -312,8 +336,11 @@ export function setMarbleRollingSpeed(speedNormalized: number): void {
   if (!ctx) return;
 
   if (!rollingNodes) {
+    void loadRollingSample(ctx);
+    if (rollingSampleState === 'idle' || rollingSampleState === 'loading') return;
+    const useSample = rollingSampleState === 'ready' && rollingSample !== null;
     const source = ctx.createBufferSource();
-    source.buffer = createRollingNoiseBuffer(ctx);
+    source.buffer = useSample ? rollingSample : createRollingNoiseBuffer(ctx);
     source.loop = true;
 
     const bandpass = ctx.createBiquadFilter();
@@ -324,6 +351,11 @@ export function setMarbleRollingSpeed(speedNormalized: number): void {
     const lowpass = ctx.createBiquadFilter();
     lowpass.type = 'lowpass';
     lowpass.frequency.value = 1100;
+    if (useSample) {
+      // Recorded clip is already shaped; keep the filters out of the way.
+      bandpass.type = 'allpass';
+      lowpass.type = 'allpass';
+    }
 
     const gain = ctx.createGain();
     gain.gain.value = 0.0001;
@@ -334,10 +366,14 @@ export function setMarbleRollingSpeed(speedNormalized: number): void {
     gain.connect(getOutput(ctx));
     source.start();
 
-    rollingNodes = { source, bandpass, lowpass, gain };
+    rollingNodes = { sample: useSample, source, bandpass, lowpass, gain };
   }
 
   const now = ctx.currentTime;
+  if (rollingNodes.sample) {
+    rollingNodes.gain.gain.setTargetAtTime(0.01 + clamped * 0.11, now, 0.045);
+    return;
+  }
   const targetFreq = 210 + clamped * 560;
   const targetGain = 0.015 + clamped * 0.095;
   rollingNodes.bandpass.frequency.setTargetAtTime(targetFreq, now, 0.05);
