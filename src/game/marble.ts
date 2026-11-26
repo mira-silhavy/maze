@@ -30,9 +30,9 @@ export interface MarbleStepResult {
 
 export const MARBLE_RADIUS = 0.27;
 const MARBLE_RADIUS_SQ = MARBLE_RADIUS * MARBLE_RADIUS;
-const ACCEL = 16.5;
+const ACCEL = 18.5;
 const FRICTION = 3.4;
-const MAX_SPEED = 6.5;
+const MAX_SPEED = 7;
 const BOUNCE = 0.28;
 const SUBSTEPS = 3;
 

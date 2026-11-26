@@ -591,18 +591,18 @@ export function CurvedMaze({
           {hintStroke(committedHint.lowerD)}
 
           {gameMode === 'collect' ? (
-            <g stroke={theme.startCross} strokeWidth="4.5" strokeLinecap="round">
+            <g stroke={theme.startCross} strokeWidth="3.5" strokeLinecap="round">
               <line
-                x1={startPos.x - 8}
-                y1={startPos.y - 8}
-                x2={startPos.x + 8}
-                y2={startPos.y + 8}
+                x1={startPos.x - 6}
+                y1={startPos.y - 6}
+                x2={startPos.x + 6}
+                y2={startPos.y + 6}
               />
               <line
-                x1={startPos.x + 8}
-                y1={startPos.y - 8}
-                x2={startPos.x - 8}
-                y2={startPos.y + 8}
+                x1={startPos.x + 6}
+                y1={startPos.y - 6}
+                x2={startPos.x - 6}
+                y2={startPos.y + 6}
               />
             </g>
           ) : (

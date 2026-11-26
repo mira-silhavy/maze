@@ -181,9 +181,9 @@ describe('marble physics', () => {
 
   it('matches full-ring polar collision scan across inner arcs, radial walls, outer rim, and seam', () => {
     const TWO_PI = Math.PI * 2;
-    const ACCEL = 16.5;
+    const ACCEL = 18.5;
     const FRICTION = 3.4;
-    const MAX_SPEED = 6.5;
+    const MAX_SPEED = 7;
     const BOUNCE = 0.28;
     const SUBSTEPS = 3;
 
