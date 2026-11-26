@@ -135,8 +135,7 @@ export function drawMarbleCanvas(
   const negU: Vec3 = [-u[0], -u[1], -u[2]];
   const negV: Vec3 = [-v[0], -v[1], -v[2]];
 
-  const scaleBoost = elevated ? 1.09 : 1;
-  const r = radius * scaleBoost;
+  const r = radius;
   const sq = squash * 0.14;
   const scaleX = squashAxis === 'x' ? 1 - sq : 1 + sq * 0.7;
   const scaleY = squashAxis === 'y' ? 1 - sq : 1 + sq * 0.7;
