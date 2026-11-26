@@ -78,6 +78,88 @@ describe('marble physics', () => {
     expect(body.level).toBeUndefined();
   });
 
+  function buildOpenTurnMaze(): Maze {
+    const maze = buildBridgeCrossMaze();
+    // The cell right of the bridge also opens upward, so its rail post stands in the turn.
+    maze.grid[1][2].walls.top = false;
+    maze.grid[0][2].walls.bottom = false;
+    return maze;
+  }
+
+  it('guides the marble around a bridge post standing in an open turn', () => {
+    const maze = buildOpenTurnMaze();
+    const post = { x: 2.14, y: 1 };
+    const closestApproach = (bridgePosts: boolean) => {
+      let body = createMarbleAt({ row: 0, col: 2 });
+      let closest = Infinity;
+      for (let i = 0; i < 120; i++) {
+        // Full diagonal tilt pins the marble to the turn's left wall all the way down.
+        const tilt = body.row === 0 ? { gx: -1, gy: 1 } : { gx: 0, gy: 1 };
+        body = stepMarblePhysics(maze, body, tilt, 0.016, bridgePosts).body;
+        closest = Math.min(closest, Math.hypot(body.x - post.x, body.y - post.y));
+      }
+      expect(body.row).toBe(1);
+      expect(body.col).toBe(2);
+      return closest;
+    };
+
+    expect(closestApproach(false)).toBeLessThan(MARBLE_RADIUS);
+    expect(closestApproach(true)).toBeGreaterThanOrEqual(MARBLE_RADIUS + 0.06 - 1e-6);
+  });
+
+  it('bumps when the marble hits a bridge post', () => {
+    const maze = buildOpenTurnMaze();
+    const bumpWithin = (bridgePosts: boolean) => {
+      let body = { ...createMarbleAt({ row: 0, col: 2 }), x: 2.3, y: 0.5, vy: 6 };
+      let bump = 0;
+      for (let i = 0; i < 4; i++) {
+        const res = stepMarblePhysics(maze, body, { gx: 0, gy: 0 }, 0.016, bridgePosts);
+        body = res.body;
+        bump = Math.max(bump, res.bumpIntensity);
+      }
+      return { bump, squash: body.squash };
+    };
+
+    expect(bumpWithin(false)).toEqual({ bump: 0, squash: 0 });
+    const hit = bumpWithin(true);
+    expect(hit.bump).toBeGreaterThan(0);
+    expect(hit.squash).toBeGreaterThan(0);
+  });
+
+  it('ignores bridge posts that stand on a closed wall', () => {
+    const maze = buildBridgeCrossMaze();
+    const run = (bridgePosts: boolean) => {
+      let body = createMarbleAt({ row: 1, col: 2 });
+      const path: Array<[number, number]> = [];
+      for (let i = 0; i < 60; i++) {
+        // Slide along the closed top wall, right past the post at (2.14, 1).
+        body = stepMarblePhysics(maze, body, { gx: -0.3, gy: -1 }, 0.016, bridgePosts).body;
+        path.push([body.x, body.y]);
+      }
+      return path;
+    };
+
+    expect(run(true)).toEqual(run(false));
+  });
+
+  it('still rolls over a bridge with bridge posts enabled', () => {
+    const maze = buildBridgeCrossMaze();
+    let body = createMarbleAt({ row: 1, col: 0 });
+    const entered: Array<{ dx: number; dy: number }> = [];
+
+    for (let i = 0; i < 90; i++) {
+      const res = stepMarblePhysics(maze, body, { gx: 1, gy: 0.4 }, 0.016, true);
+      body = res.body;
+      entered.push(...res.enteredCells);
+    }
+
+    expect(entered).toEqual([
+      { dx: 1, dy: 0 },
+      { dx: 1, dy: 0 },
+    ]);
+    expect(body.col).toBe(2);
+  });
+
   it('rolls smoothly under a bridge and enters level under', () => {
     const maze = buildBridgeCrossMaze();
     let body = createMarbleAt({ row: 0, col: 1 });

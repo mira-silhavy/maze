@@ -20,6 +20,7 @@ import {
   drawThemedTargetCanvas,
 } from '../themes/art';
 import {
+  BRIDGE_OVERHANG,
   FOG_LIGHT_RADIUS,
   FOG_MEMORY_RADIUS,
   type MazeTheme,
@@ -223,7 +224,7 @@ export function RectMaze({
     cache.bridges = bridges;
     if (bridges.length > 0) {
       const half = cellSize / 2;
-      const overhang = cellSize * 0.14;
+      const overhang = cellSize * BRIDGE_OVERHANG;
       const deckW = cellSize + overhang * 2;
 
       cache.bridgeDecksCanvas = ensureSizedCanvas(
@@ -703,7 +704,7 @@ export function RectMaze({
       // Ghost only where the deck covers the entity, so tunnel shadows still shade it.
       const cell = depth.ghost.cell;
       const half = cellSize / 2;
-      const overhang = cellSize * 0.14;
+      const overhang = cellSize * BRIDGE_OVERHANG;
       upper.save();
       upper.beginPath();
       upper.save();

@@ -1,6 +1,7 @@
 import { gridStep } from '../maze/grid';
 import { hasPolarPassage, polarCellId, type PolarMaze } from '../maze/polar';
 import type { Direction, Level, Maze, Position } from '../maze/types';
+import { BRIDGE_OVERHANG } from '../themes/catalog';
 import type { TiltVector } from './tilt';
 
 export type Vec3 = [number, number, number];
@@ -35,6 +36,67 @@ const FRICTION = 3.4;
 const MAX_SPEED = 7;
 const BOUNCE = 0.28;
 const SUBSTEPS = 3;
+/** Collision radius of a classic-maze bridge post, in cells. */
+const BRIDGE_POST_RADIUS = 0.06;
+/** How far (in cells) a post's ramp runs back up the wall of the turn it stands in. */
+const BRIDGE_RAMP_LENGTH = 0.3;
+
+type Point = [number, number];
+
+interface BridgePost {
+  /** Ramp from `from` to the post at `to`; a lone post has from === to. */
+  from: Point;
+  to: Point;
+  /** Cell corner at the bridge end and the unit direction from it to the post. */
+  corner: Point;
+  outward: Point;
+}
+
+/**
+ * Rail end posts of bridges in the 3×3 block around a cell, in cell units. Only posts
+ * standing in an open turn of the cell beside the deck count; on a closed wall the wall
+ * already keeps the marble away. Where the turn's far side is a wall, the post becomes a
+ * ramp off that wall so a marble sliding down it is guided around instead of wedged.
+ */
+function bridgePostsNear(maze: Maze, row: number, col: number): BridgePost[] {
+  const posts: BridgePost[] = [];
+  for (let r = row - 1; r <= row + 1; r++) {
+    for (let c = col - 1; c <= col + 1; c++) {
+      const axis = maze.grid[r]?.[c]?.bridge;
+      if (!axis) continue;
+      const horizontal = axis === 'horizontal';
+      const along: Point = horizontal ? [1, 0] : [0, 1];
+      const across: Point = horizontal ? [0, 1] : [1, 0];
+      for (const s of [-1, 1]) {
+        const approach = maze.grid[r + along[1] * s]?.[c + along[0] * s];
+        if (!approach) continue;
+        for (const t of [-1, 1]) {
+          const openSide = horizontal ? (t < 0 ? 'top' : 'bottom') : t < 0 ? 'left' : 'right';
+          if (approach.walls[openSide]) continue;
+          const turn =
+            maze.grid[r + (along[1] * s + across[1] * t)]?.[c + (along[0] * s + across[0] * t)];
+          const backSide = horizontal ? (s > 0 ? 'left' : 'right') : s > 0 ? 'top' : 'bottom';
+          const corner: Point = [
+            c + 0.5 + (along[0] * s + across[0] * t) * 0.5,
+            r + 0.5 + (along[1] * s + across[1] * t) * 0.5,
+          ];
+          const to: Point = [
+            corner[0] + along[0] * s * BRIDGE_OVERHANG,
+            corner[1] + along[1] * s * BRIDGE_OVERHANG,
+          ];
+          const from: Point = turn?.walls[backSide]
+            ? [
+                corner[0] + across[0] * t * BRIDGE_RAMP_LENGTH,
+                corner[1] + across[1] * t * BRIDGE_RAMP_LENGTH,
+              ]
+            : to;
+          posts.push({ from, to, corner, outward: [along[0] * s, along[1] * s] });
+        }
+      }
+    }
+  }
+  return posts;
+}
 
 function rotateVec3(
   vec: Vec3,
@@ -85,6 +147,7 @@ export function stepMarblePhysics(
   prev: MarbleBody,
   tilt: TiltVector,
   dtSec: number,
+  bridgePosts = false,
 ): MarbleStepResult {
   const clampedDt = Math.min(0.05, Math.max(0, dtSec));
   const subDt = clampedDt / SUBSTEPS;
@@ -174,17 +237,30 @@ export function stepMarblePhysics(
     }
 
     // Corner-post circle collisions so the marble glides smoothly around open turns without clipping wall ends
-    const resolveCorner = (cx: number, cy: number) => {
+    const resolveCorner = (
+      cx: number,
+      cy: number,
+      reach = MARBLE_RADIUS,
+      bumps = false,
+    ) => {
       const dx = x - cx;
       const dy = y - cy;
       const distSq = dx * dx + dy * dy;
-      if (distSq > 0 && distSq < MARBLE_RADIUS_SQ) {
+      if (distSq > 0 && distSq < reach * reach) {
         const dist = Math.sqrt(distSq);
         const nx = dx / dist;
         const ny = dy / dist;
-        x = cx + nx * MARBLE_RADIUS;
-        y = cy + ny * MARBLE_RADIUS;
+        x = cx + nx * reach;
+        y = cy + ny * reach;
         const vn = vx * nx + vy * ny;
+        if (bumps && vn < -0.6) {
+          const hit = Math.min(1, -vn / MAX_SPEED);
+          maxBump = Math.max(maxBump, hit);
+          if (hit > squash) {
+            squash = hit;
+            squashAxis = Math.abs(nx) >= Math.abs(ny) ? 'x' : 'y';
+          }
+        }
         if (vn < 0) {
           vx -= (1 + BOUNCE * 0.5) * vn * nx;
           vy -= (1 + BOUNCE * 0.5) * vn * ny;
@@ -195,6 +271,25 @@ export function stepMarblePhysics(
     resolveCorner(col + 1, row);
     resolveCorner(col, row + 1);
     resolveCorner(col + 1, row + 1);
+    if (bridgePosts) {
+      for (const { from, to, corner, outward } of bridgePostsNear(maze, row, col)) {
+        // One-sided: only a marble past the bridge end meets the post, never one under the deck.
+        if ((x - corner[0]) * outward[0] + (y - corner[1]) * outward[1] < 0) continue;
+        const sx = to[0] - from[0];
+        const sy = to[1] - from[1];
+        const lenSq = sx * sx + sy * sy;
+        const k =
+          lenSq > 0
+            ? Math.max(0, Math.min(1, ((x - from[0]) * sx + (y - from[1]) * sy) / lenSq))
+            : 0;
+        resolveCorner(
+          from[0] + sx * k,
+          from[1] + sy * k,
+          MARBLE_RADIUS + BRIDGE_POST_RADIUS,
+          true,
+        );
+      }
+    }
 
     // Roll the 3D sphere basis based on actual distance traveled
     const stepDx = x - startX;

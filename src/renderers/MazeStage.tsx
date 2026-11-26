@@ -136,6 +136,7 @@ export const MazeStage = memo(function MazeStage({
           marbleRef.current,
           tilt,
           dt,
+          settings.style !== 'curved',
         );
         marbleRef.current = result.body;
 
@@ -189,7 +190,7 @@ export const MazeStage = memo(function MazeStage({
       window.cancelAnimationFrame(rafId);
       stopMarbleRollingSound();
     };
-  }, [marbleMode, won, round.kind, round.board, sound, dispatch, tiltRef]);
+  }, [marbleMode, won, round.kind, round.board, sound, dispatch, tiltRef, settings.style]);
 
   return (
     <div
